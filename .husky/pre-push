@@ -1,17 +1,2 @@
-# Fast local subset of the CI gates. CI also runs the secret scan and always runs RSpec.
-set -e
-
-echo "pre-push: api rubocop"
-(cd api && bundle exec rubocop)
-
-echo "pre-push: web eslint, prettier, tsc, jest"
-(cd web && npm run --silent lint && npm run --silent format:check && npm run --silent typecheck && npm run --silent test -- --silent)
-
-db_host="${DB_HOST:-localhost}"
-db_port="${DB_PORT:-5433}"
-if nc -z -w 2 "$db_host" "$db_port" 2>/dev/null; then
-  echo "pre-push: api rspec"
-  (cd api && bundle exec rspec)
-else
-  echo "pre-push: skipping rspec, no Postgres at $db_host:$db_port (start it with: docker compose up -d postgres)"
-fi
+# Same gates as the CI gates job (bin/gates).
+bin/gates
