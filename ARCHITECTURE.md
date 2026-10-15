@@ -31,7 +31,7 @@ flowchart LR
     ST[(Storage<br/>private bucket)]
   end
   LLM[LLM provider<br/>Claude / Groq / Gemini / Ollama]
-  UP[Uptime check<br/>GitHub Actions cron]
+  UP[Uptime check<br/>GitLab pipeline schedule]
 
   W -- sign in --> AUTH
   W -- pages --> WEB
@@ -94,7 +94,8 @@ web/            Next.js app: pages, components, trigger engine, Jest and Playwri
 perf/           k6 scripts and recorded results
 docs/           requirements, decisions, data-to-LLM disclosure, compliance, runbooks
 supabase/       Supabase CLI config, RLS policies, storage bucket setup
-.github/        CI workflow
+.gitlab-ci.yml  CI pipeline
+.husky/         pre-push hook running the fast local gates
 docker-compose.yml   local api + web against a local Supabase stack
 ```
 
@@ -276,7 +277,7 @@ Python sidecar service behind the same `Ocr::Extractor` interface.
 | R20 Data to LLM | `Llm::PayloadBuilder` allowlist, contract spec, `docs/data-to-llm.md`, `docs/compliance.md` |
 | R21 No paid API | Free provider via env vars, harness skips missing keys |
 | R22–R24 Latency | k6 scripts, booking timing logs, OCR timing script |
-| R25 Uptime | `/health`, scheduled GitHub Actions ping, `bin/uptime-report` |
+| R25 Uptime | `/health`, scheduled GitLab pipeline ping, `bin/uptime-report` |
 | R26 Golden set | `api/eval/golden/` with generator script |
 | R27 Scorecard | `rake ai:eval` |
 | R28 Provider comparison | `rake ai:eval PROVIDERS=all`, README results table |
@@ -286,7 +287,7 @@ Python sidecar service behind the same `Ocr::Extractor` interface.
 | R32 Clean checkout | Supabase CLI local stack, docker compose, `bin/setup`, seeds |
 | R33 Environment config | `.env.example` files, env check script, secret scan |
 | R34 Accessibility | Semantic forms, jest-axe, `@axe-core/playwright` |
-| R35 CI | GitHub Actions workflow |
+| R35 CI | GitLab CI pipeline (`.gitlab-ci.yml`) |
 | R36 Reschedule and cancel | `Booker`, schedule page, `request-reschedule` handler |
 | R37 Timezones | timestamptz UTC storage, `Intl.DateTimeFormat` with zone label |
 | R38 Deployed performance | Railway always-on, k6 against the deployed URL, health ping touching the database |
@@ -366,14 +367,15 @@ Test-first, one requirement per test/implementation pair, as in the delivery loo
 
 **Quality gates**
 
-- GitHub Actions on every push: RuboCop, RSpec with SimpleCov thresholds, ESLint, Prettier check,
+- GitLab CI on every push to any branch: RuboCop, RSpec with SimpleCov thresholds, ESLint, Prettier check,
   `tsc --noEmit`, Jest with coverage thresholds, the env check script, and a secret scan.
-  Playwright runs on pushes to `main` and on PRs.
+  Playwright runs on pushes to `main` and on merge requests.
 - A Husky pre-push hook runs the fast subset locally.
 
 ## Deployment on Railway
 
-Two Railway services from this repo, plus a hosted Supabase project.
+Two Railway services from this repo, plus a hosted Supabase project. GitLab CI deploys them with
+the Railway CLI, since Railway's native repository integration supports only GitHub.
 
 | Service | Root | Build | Start |
 | --- | --- | --- | --- |
@@ -392,10 +394,10 @@ Two Railway services from this repo, plus a hosted Supabase project.
 
 Secrets are entered in Railway by the user. Railway provides HTTPS on both services.
 
-**Uptime check:** a scheduled GitHub Actions workflow (`.github/workflows/uptime.yml`) pings the
-deployed `/health` every 5 minutes from outside Railway. Each run's pass or fail is its record,
-and `bin/uptime-report` computes the uptime percentage for the evaluation window from the
-workflow's run history. GitHub may delay scheduled runs, so the report counts the checks that
+**Uptime check:** a GitLab pipeline schedule runs an uptime job that pings the deployed `/health`
+every 5 minutes from outside Railway. Each run's pass or fail is its record, and
+`bin/uptime-report` computes the uptime percentage for the evaluation window from the schedule's
+pipeline history. GitLab may delay scheduled pipelines, so the report counts the checks that
 actually ran rather than assuming one every 5 minutes.
 
 **Local and grader setup:** `supabase start` runs Auth, Postgres and Storage locally, then
@@ -418,4 +420,5 @@ app and the eval run with no paid key.
 
 - **API keys:** Groq, Gemini and Claude keys are already in the local `.env`; the user sets the
   same keys in Railway.
-- **Repository name and visibility** on GitHub.
+- **Repository:** resolved; the repository is public on GitLab
+  ([decision](docs/decisions.md#2026-10-15-repository-hosted-on-gitlab)).

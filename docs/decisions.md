@@ -143,3 +143,53 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Decision:** approved the requirements file (gotchas included) and ARCHITECTURE.md, including
   the agent entries above marked "pending user approval". Implementation can start.
 - **Affects:** all
+
+## 2026-10-15: Repository hosted on GitLab
+
+- **Decided by:** user
+- **Replaces:** "Uptime check runs on GitHub Actions", the GitHub Actions CI named in
+  ARCHITECTURE.md, the "Public GitHub repository" deliverable, and the open question on the GitHub
+  repository name and visibility.
+- **Decision:** the repository lives on gitlab.com and is public now. Every change goes on a
+  feature branch and reaches `main` through a Merge Request after CI passes. CI is GitLab CI
+  (`.gitlab-ci.yml`). The R25 uptime check is a GitLab pipeline schedule that pings `/health`
+  every 5 minutes, and the uptime report reads that schedule's pipeline history. Railway deploys
+  through the Railway CLI, because Railway's native repository integration supports only GitHub.
+- **Alternatives:** stay on GitHub with GitHub Actions; mirror GitLab to GitHub so Railway's
+  native integration still works.
+- **Tradeoffs:** GitLab CI covers the same gates and schedules. Deploying with the Railway CLI
+  needs a Railway token stored as a GitLab CI variable instead of a click-through integration.
+  Scheduled pipelines can also be delayed, so the uptime report still counts the checks that ran.
+- **Affects:** R25, R35, Deliverables
+
+## 2026-10-15: Workers may install system dependencies with Homebrew
+
+- **Decided by:** user
+- **Decision:** agents may `brew install` the system dependencies the architecture needs
+  (Tesseract, libvips, libheif, the Supabase CLI, k6) when their task needs them.
+- **Alternatives:** ask the user before each install; run everything only inside Docker.
+- **Tradeoffs:** faster local work, at the cost of agents changing the user's machine. The README
+  still has to list these dependencies for a clean checkout.
+- **Affects:** R32
+
+## 2026-10-15: Scaffold choices for the quality gates
+
+- **Decided by:** agent
+- **Decision:**
+  - SimpleCov groups map the R29 modules to `app/services/ocr`, `app/services/chat` and
+    `app/services/scheduling`, each with an 80% line minimum. A group with no files counts as
+    100%, so the build passes until code lands, and every file under `app/` and `lib/` is
+    reported even if no spec loads it, so an untested service counts as 0%.
+  - Jest enforces an 80% global threshold on lines, branches, functions and statements.
+  - Local Postgres for development and tests runs from `docker-compose.yml` on host port 5433
+    (`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`), so it doesn't collide with a Postgres
+    already on 5432. CI uses a Postgres 17 service container.
+  - The Rails app skips Action Mailer, Action Mailbox, Action Text, Active Storage, Action
+    Cable, Kamal and Thruster, which the architecture doesn't use.
+  - The pre-push hook runs RuboCop, ESLint, Prettier, `tsc` and Jest, and RSpec only when the
+    database is reachable. CI always runs RSpec and the secret scan.
+- **Alternatives:** an overall coverage minimum instead of per-group; mocking the database; a
+  pre-push hook that requires Postgres.
+- **Tradeoffs:** per-group minimums target R29 exactly but leave non-core code unenforced. Skipping
+  RSpec locally without a database keeps pushes fast and possible, and CI still catches failures.
+- **Affects:** R29, R32, R35

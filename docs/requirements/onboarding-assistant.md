@@ -388,7 +388,7 @@ Not required for done. Pursue only after every R above passes, and only with the
 
 Checked at submission, not part of the build audit.
 
-- [ ] Public GitHub repository
+- [ ] Public GitLab repository
 - [ ] README: what the app does, stack and LLM choices with reasons, the grader quick-start (setup,
       environment variables, seed command, demo credentials, test and eval commands), and the
       performance and eval results with how each was measured
