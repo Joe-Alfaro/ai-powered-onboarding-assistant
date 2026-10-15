@@ -749,3 +749,102 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   a large photo reads worse. Preprocessing plus Tesseract takes about 0.5 s per image on an
   Apple M2, but Railway's CPU is unmeasured (R23).
 - **Affects:** R4, R10, R11, R23, R26
+
+## 2026-10-15: Documents and consent contracts set by the tests
+
+- **Decided by:** agent (test agent, documents)
+- **Decision:**
+  - **Consent:** `Consent::Ledger.grant!(user_id:, text_version:)`, `.revoke!(user_id:)` and
+    `.active?(user_id)`. Each grant is a new `consents` row (`user_id`, `text_version`,
+    `granted_at`); revoking sets `revoked_at`, and a later grant makes a new row. A blank version
+    raises `ActiveRecord::RecordInvalid`. `POST /consents` with `{ text_version }` returns 201
+    `{ consent: { text_version, granted_at } }` for the token's user.
+  - **Upload:** `POST /documents` takes a multipart `file`. Every accepted upload returns 200
+    `{ document: { id, status: "pending", manual_entry, reason, fields } }`, where `fields` always
+    has `full_name`, `date_of_birth` and `address`, each `null` or `{ value, confidence, level }`,
+    and `reason` is the `Ocr::Result` reason as a string. OCR failure, an OCR exception, no text,
+    low confidence and no fields are all 200 with `manual_entry: true`, never a 500.
+  - **Errors:** no active consent is 403 `consent_required`, checked before anything is stored or
+    run, and again under a row lock before the draft is written (a revocation during OCR also
+    gives 403 and leaves no draft and no stored image). A body over `MAX_UPLOAD_MB` is 413
+    `file_too_large`, whose message names the limit; a non-image by content is 415
+    `unsupported_file_type`; a truncated or undecodable image is 422 `unreadable_image`; no file is
+    400 `invalid_request`. The 413, 415 and 422 envelopes offer `manual_entry`.
+  - **Size limit:** the specs call the Rack app with a lazily generated 50 MB body that counts
+    what is read. With a declared `Content-Length` over the limit, under 1 MB may be read; with
+    no `Content-Length`, reading must stop within 1 MB past the limit.
+  - **HEIC is converted, not rejected:** a HEIC upload (recognized by content, whatever its name)
+    is converted to JPEG or PNG before OCR and before storage, so the browser can show the
+    preview. libvips on the host and the Docker image needs HEIF support (libheif).
+  - **OCR seam:** the lifecycle gets its engine from `Ocr::Extractor.new` on each upload and calls
+    `#call(path)` with a local copy of the (converted) image; most specs stub `.new`. Two specs
+    run real Tesseract on a JPEG and a HEIC of the sample card.
+  - **Storage:** the Supabase Storage REST API under `SUPABASE_URL/storage/v1`, bucket
+    `STORAGE_BUCKET`, authenticated with `Authorization: Bearer SUPABASE_SERVICE_ROLE_KEY`. The
+    specs fake it at the HTTP boundary (`spec/support/fake_supabase_storage.rb`), including its
+    400-with-`statusCode: "404"` for a missing object.
+  - **Draft and confirm:** OCR output lives only in `document_uploads.draft_fields` (only the three
+    fields); `onboardings` gets identity values only from `POST /documents/:id/confirm` (JSON
+    `full_name`, `date_of_birth` as `YYYY-MM-DD`, `address`), which saves them as sent with
+    `identity_source: "ocr"` and `confirmed_at`, deletes the image from storage and clears the
+    draft. A blank field or an impossible or future date is 422 `validation_failed` and changes
+    nothing. Other params, such as `identity_source` or `user_id`, are ignored.
+  - **Reads:** `GET /documents/:id` returns the pending draft. `GET /documents/:id/preview` signs
+    a new URL on every call and returns `{ url, expires_in: 60 }`, with `url` the absolute signed
+    URL. After confirm, after purge, or for another user's upload both return 404 and sign nothing.
+  - **Manual entry:** `POST /onboarding/identity` with the same three fields saves them with
+    `identity_source: "manual"`. It needs no consent record, because no image is involved.
+  - **Purge:** `Documents::PurgeExpiredUploadsJob` hard-deletes the storage object and the
+    `document_uploads` row for every unconfirmed upload older than 1 hour, tolerates an object
+    that is already gone, and is a production task in `config/recurring.yml`.
+  - **Filenames:** the uploaded filename appears in no column, storage key, log line or response.
+- **Alternatives:** rejecting HEIC with a message (simpler, but iPhone users would hit it often);
+  201 for a successful upload and 200 for manual entry; requiring consent for manual entry;
+  keeping the purged row with a status.
+- **Tradeoffs:** HEIC conversion depends on libheif in every environment, which the CI host's
+  Homebrew libvips has. A 200 for every OCR outcome means the web app reads `manual_entry`, not
+  the status, to decide what to show. Stubbing `Ocr::Extractor.new` ties the lifecycle to building
+  its engine per upload, which is cheap.
+- **Affects:** R5, R10, R11, R12, R13, R14, R17, R19
+
+## 2026-10-15: Documents and consent implementation choices
+
+- **Decided by:** agent (implementation agent, documents)
+- **Decision:**
+  - **Upload order:** consent check, validation, then the `document_uploads` row (pending, no
+    draft), then the Storage upload, OCR, and the draft written inside
+    `Consent::Ledger.with_active_consent`, which locks the user's active consent rows
+    (`SELECT ... FOR UPDATE`). `revoke!` is an `UPDATE` of the same rows, so it waits for an
+    in-flight draft write. Any failure after the row exists deletes the image and the row; if
+    Storage can't be reached for that delete, the row stays so the purge job retries.
+  - **Consent rows:** a grant always adds a row and never touches older ones; `revoke!` ends every
+    active row; `active?` is "any unrevoked row". `withdrawn?` (used by chat) is true only for a
+    user who consented and now has no active consent, so users who never consented can still
+    chat.
+  - **Body limit:** a Rack middleware (`lib/boot/upload_body_limit.rb`) on `POST /documents`
+    refuses a declared `Content-Length` over `MAX_UPLOAD_MB` plus 64 KB of multipart overhead
+    without reading, and copies a chunked body to a temp file 16 KB at a time, stopping as soon
+    as it passes that. `Uploads::Validator` then checks the file part against the exact limit.
+  - **Validation:** magic bytes for JPEG, PNG and HEIF brands (`heic`, `mif1` and so on), then a
+    full libvips decode with `fail_on: :truncated`, and a 100-megapixel cap against decompression
+    bombs. JPEG and PNG are stored byte for byte; HEIC becomes a quality-90 JPEG with metadata
+    stripped.
+  - **OCR reason:** `document_uploads.ocr_reason` holds the `Ocr::Result` reason, because
+    `draft_fields` may only hold the three identity fields. `manual_entry` is `ocr_reason.present?`.
+  - **Confirm:** runs in one transaction with the upload row locked; the Storage delete happens
+    inside it, so a failed delete rolls back the confirmation instead of leaving an image behind.
+    A confirmed row is kept with `status: "confirmed"`, no draft and the (deleted) key.
+  - **Manual entry** also discards any pending upload the user had, image included.
+  - **Storage keys** are `<user_id>/<upload id>.<jpg|png>`. Storage failures map to a 503
+    `storage_unavailable` envelope offering `retry` and `manual_entry`.
+  - **Purge:** `expires_at` is set to upload time plus 1 hour; the job runs `every hour` and
+    deletes pending rows past it, so an image lives under 2 hours at most. The policy is in
+    `docs/privacy.md`.
+- **Alternatives:** writing the row only after OCR (an image could be orphaned if the cleanup
+  delete failed); deleting the image after the confirm commit (it could outlive a confirmation);
+  storing the reason inside `draft_fields`; reading the whole chunked body and then checking its
+  size.
+- **Tradeoffs:** confirm's Storage call inside a transaction holds a row lock for up to the 10 s
+  Storage timeout. JPEG originals keep their EXIF metadata in the bucket for their short life,
+  because the specs require the stored bytes to match the upload.
+- **Affects:** R5, R10, R12, R13, R14, R17
