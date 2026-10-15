@@ -18,6 +18,8 @@ require "action_view/railtie"
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
 
+require_relative "../lib/boot/json_log_formatter"
+
 module Api
   class Application < Rails::Application
     # Initialize configuration defaults for originally generated Rails version.
@@ -26,7 +28,8 @@ module Api
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
     # Common ones are `templates`, `generators`, or `middleware`, for example.
-    config.autoload_lib(ignore: %w[assets tasks])
+    # lib/boot is required explicitly because it is needed before autoloading starts.
+    config.autoload_lib(ignore: %w[assets boot tasks])
 
     # Configuration for the application, engines, and railties goes here.
     #
@@ -40,5 +43,8 @@ module Api
     # Middleware like session, flash, cookies can be added back manually.
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = true
+
+    # Every log line is one JSON object (R31); Lograge is configured in an initializer.
+    config.log_formatter = JsonLogFormatter.new
   end
 end

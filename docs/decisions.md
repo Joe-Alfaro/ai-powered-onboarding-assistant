@@ -411,3 +411,33 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   covers future tables. Because `schema.rb` doesn't record RLS, the implementation needs a way to
   get it into the test database (for example a SQL schema format).
 - **Affects:** R15, R19, R30, R31
+
+## 2026-10-15: API foundation implementation choices
+
+- **Decided by:** agent (implementation agent, api-foundation)
+- **Decision:**
+  - **RLS without a SQL schema:** `schema.rb` stays the schema format. `lib/boot/row_level_security.rb`
+    is prepended to `ActiveRecord::Migrator` and `ActiveRecord::Schema::Definition`, and after every
+    migration run and every schema load it enables RLS on each `public` table that lacks it. New
+    tables from other slices get RLS with no extra migration code.
+  - **JWT:** the `jwt` gem, ES256 and RS256 only. The JWKS is cached for 10 minutes. A token with an
+    unknown `kid` forces a refetch at most once a minute. If a refresh fails while keys are cached,
+    the cached keys stay in use, and `JwksUnavailable` is raised only when no keys were ever fetched.
+  - **Logs:** `JsonLogFormatter` is the `Rails.logger` formatter in every environment. It merges
+    Lograge's JSON line into one entry and wraps any other message as `message`. Production drops
+    `log_tags`, because a tag prefix breaks the JSON, and logs `request_id` as a Lograge field
+    instead. A rescued error adds `error_class`, `error_code` and, for 500s, five cleaned backtrace
+    lines to the request's single line.
+  - **Unknown routes:** a catch-all `match "*path"` route, kept last in `routes.rb`, raises
+    `RoutingError` into the same `rescue_from` layer. No custom `exceptions_app`.
+  - **Health placeholders:** storage, OCR and LLM are registered in `Health::Check.probes` as
+    `CachedProbe(Probes::NotConfigured)` and report `down` until each slice swaps in its real probe
+    on that line. The registry is memoized so the cache survives across pings.
+- **Alternatives:** `schema_format = :sql`, which needs `pg_dump` and `psql` on the shared runner
+  host, and neither is installed; enabling RLS per migration by hand; a Postgres event trigger,
+  which `schema.rb` can't record either; reporting unbuilt probes as `ok`.
+- **Tradeoffs:** the hook is implicit, but the RLS spec queries the catalog, so a regression is
+  caught. Serving a stale JWKS keeps users signed in during a JWKS outage, at the cost of trusting
+  a revoked key for up to one more refresh cycle. A `down` placeholder shows `/health` as degraded
+  until the OCR, LLM and storage slices land, which is honest about what isn't built.
+- **Affects:** R15, R19, R30, R31
