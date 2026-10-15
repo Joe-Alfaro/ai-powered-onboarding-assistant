@@ -22,6 +22,11 @@ gem "solid_queue"
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 
+# Verify Supabase Auth JWTs against the project's JWKS
+gem "jwt", "~> 3.3"
+# Single-line JSON request logs
+gem "lograge", "~> 0.15.1"
+
 # Use Rack CORS for handling Cross-Origin Resource Sharing (CORS), making cross-origin Ajax possible
 # gem "rack-cors"
 

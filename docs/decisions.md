@@ -369,3 +369,87 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   picks them; `LLM_MODEL` overrides them with no code change. Auto tool choice on the 5.5 models
   can produce more invalid responses than forced tool use; the eval will show how many.
 - **Affects:** R16, R20, R21, R28
+
+## 2026-10-15: API foundation contracts set by the tests
+
+- **Decided by:** agent (test agent, api-foundation)
+- **Decision:** the api-foundation specs fix these interfaces for the implementation and for the
+  slices built in parallel:
+  - **Auth:** `Auth::JwtVerifier.new(jwks_url:, issuer:)` with `#verify(token)` returning an
+    identity with `user_id` (the `sub` claim) and `admin?`. It accepts ES256 and RS256 keys from
+    the JWKS, requires `exp`, `sub`, issuer `<SUPABASE_URL>/auth/v1` and audience `authenticated`,
+    and caches the JWKS in memory. Failures raise `Auth::JwtVerifier::InvalidToken` (401) or
+    `Auth::JwtVerifier::JwksUnavailable` (503 `auth_unavailable`).
+  - **Admin role:** only `app_metadata.role == "admin"` counts. `user_metadata` and the top-level
+    `role` claim are ignored, because users can edit `user_metadata` themselves.
+  - **Controllers:** every `ApplicationController` subclass requires a bearer token by default and
+    exposes `current_user_id`; admin endpoints use `before_action :require_admin!`, which writes
+    one `AuditEvent` per admin access. Public endpoints such as `/health` opt out explicitly.
+  - **Audit actor_ref:** hex HMAC-SHA256 of the user ID keyed by `AUDIT_HMAC_KEY`.
+  - **Error codes:** `unauthorized` 401, `forbidden` 403, `not_found` 404 (including unknown
+    routes), `invalid_request` 400 (missing params), `validation_failed` 422,
+    `database_unavailable` 503 (any `ActiveRecord::ConnectionNotEstablished`), `internal_error`
+    500 with a generic message. Other slices raise `ApiError.new(status:, code:, message:,
+    actions:)` to get their own envelope, for example `llm_unavailable` with
+    `actions: ["retry", "manual"]`.
+  - **Health:** `Health::Check.new(probes:).call` returns
+    `{ status: "ok" | "degraded" | "down", checks: { app:, database:, storage:, ocr:, llm: } }`,
+    each check `{ status: "ok" | "down" }`. A probe is any callable; `false` or an exception
+    means down. `/health` returns 503 only when the database is down. `Health::Check.probes` is
+    the app's registry: the database probe runs on every ping; storage, OCR and LLM are wrapped
+    in `Health::CachedProbe.new(probe, ttl:)` with a ttl of at most 5 minutes. The OCR, LLM and
+    storage slices register their real probes there.
+  - **Logs:** every log line, including errors, goes through `Rails.logger` as one JSON object.
+    Error entries name the exception class but never include its message.
+  - **RLS:** enabled on every table in the `public` schema, Rails' own `schema_migrations` and
+    `ar_internal_metadata` included, with no policy for `anon`, `authenticated` or `public`.
+- **Alternatives:** admin role in a custom claim or a database table; plain SHA-256 for
+  `actor_ref`; flat health statuses; exempting Rails' internal tables from RLS.
+- **Tradeoffs:** a keyed HMAC can't be reversed by hashing guessed user IDs. Nested health checks
+  leave room for latency or detail fields later. RLS on the internal tables keeps a leaked anon
+  key from even reading the migration history, and keeps the spec a single catalog query that
+  covers future tables. Because `schema.rb` doesn't record RLS, the implementation needs a way to
+  get it into the test database (for example a SQL schema format).
+- **Affects:** R15, R19, R30, R31
+
+## 2026-10-15: API foundation implementation choices
+
+- **Decided by:** agent (implementation agent, api-foundation)
+- **Decision:**
+  - **RLS without a SQL schema:** `schema.rb` stays the schema format. `lib/boot/row_level_security.rb`
+    is prepended to `ActiveRecord::Migrator` and `ActiveRecord::Schema::Definition`, and after every
+    migration run and every schema load it enables RLS on each `public` table that lacks it. New
+    tables from other slices get RLS with no extra migration code.
+  - **JWT:** the `jwt` gem, ES256 and RS256 only. The JWKS is cached for 10 minutes. A token with an
+    unknown `kid` forces a refetch at most once a minute. If a refresh fails while keys are cached,
+    the cached keys stay in use, and `JwksUnavailable` is raised only when no keys were ever fetched.
+  - **Logs:** `JsonLogFormatter` is the `Rails.logger` formatter in every environment. It merges
+    Lograge's JSON line into one entry and wraps any other message as `message`. Production drops
+    `log_tags`, because a tag prefix breaks the JSON, and logs `request_id` as a Lograge field
+    instead. A rescued error adds `error_class`, `error_code` and, for 500s, five cleaned backtrace
+    lines to the request's single line.
+  - **Unknown routes:** a catch-all `match "*path"` route, kept last in `routes.rb`, raises
+    `RoutingError` into the same `rescue_from` layer. No custom `exceptions_app`.
+  - **Health placeholders:** storage, OCR and LLM are registered in `Health::Check.probes` as
+    `CachedProbe(Probes::NotConfigured)` and report `down` until each slice swaps in its real probe
+    on that line. The registry is memoized so the cache survives across pings.
+- **Alternatives:** `schema_format = :sql`, which needs `pg_dump` and `psql` on the shared runner
+  host, and neither is installed; enabling RLS per migration by hand; a Postgres event trigger,
+  which `schema.rb` can't record either; reporting unbuilt probes as `ok`.
+- **Tradeoffs:** the hook is implicit, but the RLS spec queries the catalog, so a regression is
+  caught. Serving a stale JWKS keeps users signed in during a JWKS outage, at the cost of trusting
+  a revoked key for up to one more refresh cycle. A `down` placeholder shows `/health` as degraded
+  until the OCR, LLM and storage slices land, which is honest about what isn't built.
+- **Affects:** R15, R19, R30, R31
+
+## 2026-10-15: Error envelope action vocabulary
+
+- **Decided by:** agent (implementation agent, api-foundation), at the orchestrator's direction
+- **Decision:** `actions` in the error envelope uses only `retry` and `manual_entry`, the values
+  the web shell's tests expect. This replaces the `["retry", "manual"]` example in "API foundation
+  contracts set by the tests". The foundation's 401 `unauthorized` envelope now has no actions
+  (it was `["sign_in"]`). The web app handles a 401 by its code.
+- **Alternatives:** a wider action list, with a `sign_in` action for 401s.
+- **Tradeoffs:** one small vocabulary keeps the web shell's action handling exhaustive. Slices
+  that emit their own actions (for example `Llm::Error`) need to match it.
+- **Affects:** R16, R30
