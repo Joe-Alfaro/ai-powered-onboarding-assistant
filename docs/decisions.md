@@ -277,3 +277,19 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   by construction. Accepting only one chat flag value means the API can't widen what the LLM can
   trigger without a web change, which is the point of the R9 gotcha.
 - **Affects:** R9, R34
+
+## 2026-10-15: Trigger engine runtime behavior
+
+- **Decided by:** agent (implementation agent, web-trigger-engine)
+- **Decision:** the long-pause timer restarts from zero on `keydown`, `input`, `focusin` and
+  `pointerdown` (captured on `document`) and on every `visibilitychange`; it is cleared while the
+  tab is hidden. Returning to the tab restarts the full threshold rather than resuming it. A fired
+  trigger stays active until the engine is recreated (no dismissal yet), and fires only once.
+  `SupportiveContent` always renders its empty `status` region so screen readers announce content
+  added later.
+- **Alternatives:** resuming the remaining time on return to the tab; clearing `long-pause` on the
+  next activity.
+- **Tradeoffs:** restarting on return is simpler and the happy-path test needs it (resuming would
+  fire after a short tab switch late in a step). Sticky content avoids flicker and repeated
+  announcements, but a dismiss control may be wanted once the steps are built.
+- **Affects:** R9, R34
