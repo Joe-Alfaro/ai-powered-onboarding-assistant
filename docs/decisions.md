@@ -1043,3 +1043,28 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   real browser sessions), `@axe-core/playwright` on the deployed page, and color contrast
   (R34), which jsdom can't compute.
 - **Affects:** R6, R7, R8, R30, R34, R36, R37
+
+## 2026-10-15: Schedule page refreshes open slots after every change
+
+- **Decided by:** agent (implementation agent, web-schedule)
+- **Decision:**
+  - `Scheduler` reads `GET /slots` again after every successful book, reschedule or cancel, and
+    after a `slot_taken` 409, then shows the new slots, booking and result in one update. The
+    page never works out which slots are open on its own; the API is the source of truth (R7,
+    R8). If that refresh fails, the old list is shown without the slot just booked or taken.
+  - The `role="status"` and `role="alert"` messages render only while they have text, and both
+    clear when the user starts the next action (Reschedule, Cancel booking, submit), so a
+    screen reader hears each result once and there is never a stale result beside a new one.
+  - Cancelling confirms inline inside the "Your booking" region, replacing the Reschedule and
+    Cancel buttons with "Yes, cancel it" and "Keep my booking". The submit button is disabled
+    until a slot is chosen and while a request is in flight, so a double click can't send twice.
+  - The schedule page is a client component that builds its API client once with `useMemo`,
+    because a server page can't pass the token function to a client component.
+- **Alternatives:** removing the booked slot from the local list (drifts from the API when
+  someone else books); an always-present empty live region (announces reliably on more screen
+  readers, but leaves an empty status the tests would read as the result); a modal dialog for
+  the cancel step.
+- **Tradeoffs:** one extra `GET /slots` per change. Conditionally rendered live regions are
+  announced by most but not all screen reader and browser pairs; the deferred Playwright and
+  axe checks on the deployed page (R34) should confirm it.
+- **Affects:** R6, R7, R8, R34, R36
