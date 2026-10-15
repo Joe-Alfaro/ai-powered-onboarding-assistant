@@ -421,9 +421,7 @@ app and the eval run with no paid key.
 
 - **API keys:** Groq, Gemini and Claude keys are already in the local `.env`; the user sets the
   same keys in Railway.
-- **Repository:** resolved; merge requests go to a self-hosted GitLab, with GitHub as a mirror
-  ([decision](docs/decisions.md#2026-10-15-self-hosted-gitlab-with-a-github-mirror)).
-- **Uptime check mechanism (R25):** a GitHub Actions cron on the GitHub mirror, or an external free
-  uptime monitor.
-- **Deploy trigger:** Railway's native GitHub integration on the GitHub mirror, or the Railway CLI
-  run by hand.
+- **Repository:** resolved; the self-hosted GitLab is the only remote
+  ([decision](docs/decisions.md#2026-10-15-gitlab-is-the-only-remote)).
+- **Uptime check mechanism (R25):** an external free uptime monitor is the remaining candidate.
+- **Deploy trigger:** the Railway CLI.

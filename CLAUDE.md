@@ -9,8 +9,8 @@
 
 ## Git and merging
 
-- Merge requests go to the self-hosted GitLab remote, named `gitlab`. `origin` is a GitHub mirror;
-  open no pull requests there. Never write the GitLab host name into any file, commit or MR text;
+- `origin` is the self-hosted GitLab and the only remote. Push with `git push origin <branch>` and
+  open merge requests there. Never write the GitLab host name into any file, commit or MR text;
   call it "the GitLab remote" or `<gitlab host>`.
 - One feature branch per change, off `main`. `main` is protected: changes reach it only through a
   merge request, and the MR pipeline must pass before merge.
