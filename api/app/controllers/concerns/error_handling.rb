@@ -20,6 +20,8 @@ module ErrorHandling
       [ 401, "unauthorized", "Please sign in again.", [] ],
     Auth::JwtVerifier::JwksUnavailable =>
       [ 503, "auth_unavailable", "We can't check your sign-in right now. Please try again shortly.", [ "retry" ] ],
+    Storage::Client::Error =>
+      [ 503, "storage_unavailable", "We can't save or show your photo right now. Please try again shortly.", [ "retry", "manual_entry" ] ],
     # Covers DatabaseConnectionError and ConnectionTimeoutError, which subclass it.
     ActiveRecord::ConnectionNotEstablished =>
       [ 503, "database_unavailable", "We can't reach our database right now. Please try again shortly.", [ "retry" ] ]

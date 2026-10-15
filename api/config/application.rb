@@ -19,6 +19,7 @@ require "action_view/railtie"
 Bundler.require(*Rails.groups)
 
 require_relative "../lib/boot/json_log_formatter"
+require_relative "../lib/boot/upload_body_limit"
 
 module Api
   class Application < Rails::Application
@@ -43,6 +44,9 @@ module Api
     # Middleware like session, flash, cookies can be added back manually.
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = true
+
+    # Refuses oversized uploads before their body is read (R14).
+    config.middleware.use UploadBodyLimit
 
     # Every log line is one JSON object (R31); Lograge is configured in an initializer.
     config.log_formatter = JsonLogFormatter.new

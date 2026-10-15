@@ -806,3 +806,45 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   the status, to decide what to show. Stubbing `Ocr::Extractor.new` ties the lifecycle to building
   its engine per upload, which is cheap.
 - **Affects:** R5, R10, R11, R12, R13, R14, R17, R19
+
+## 2026-10-15: Documents and consent implementation choices
+
+- **Decided by:** agent (implementation agent, documents)
+- **Decision:**
+  - **Upload order:** consent check, validation, then the `document_uploads` row (pending, no
+    draft), then the Storage upload, OCR, and the draft written inside
+    `Consent::Ledger.with_active_consent`, which locks the user's active consent rows
+    (`SELECT ... FOR UPDATE`). `revoke!` is an `UPDATE` of the same rows, so it waits for an
+    in-flight draft write. Any failure after the row exists deletes the image and the row; if
+    Storage can't be reached for that delete, the row stays so the purge job retries.
+  - **Consent rows:** a grant always adds a row and never touches older ones; `revoke!` ends every
+    active row; `active?` is "any unrevoked row". `withdrawn?` (used by chat) is true only for a
+    user who consented and now has no active consent, so users who never consented can still
+    chat.
+  - **Body limit:** a Rack middleware (`lib/boot/upload_body_limit.rb`) on `POST /documents`
+    refuses a declared `Content-Length` over `MAX_UPLOAD_MB` plus 64 KB of multipart overhead
+    without reading, and copies a chunked body to a temp file 16 KB at a time, stopping as soon
+    as it passes that. `Uploads::Validator` then checks the file part against the exact limit.
+  - **Validation:** magic bytes for JPEG, PNG and HEIF brands (`heic`, `mif1` and so on), then a
+    full libvips decode with `fail_on: :truncated`, and a 100-megapixel cap against decompression
+    bombs. JPEG and PNG are stored byte for byte; HEIC becomes a quality-90 JPEG with metadata
+    stripped.
+  - **OCR reason:** `document_uploads.ocr_reason` holds the `Ocr::Result` reason, because
+    `draft_fields` may only hold the three identity fields. `manual_entry` is `ocr_reason.present?`.
+  - **Confirm:** runs in one transaction with the upload row locked; the Storage delete happens
+    inside it, so a failed delete rolls back the confirmation instead of leaving an image behind.
+    A confirmed row is kept with `status: "confirmed"`, no draft and the (deleted) key.
+  - **Manual entry** also discards any pending upload the user had, image included.
+  - **Storage keys** are `<user_id>/<upload id>.<jpg|png>`. Storage failures map to a 503
+    `storage_unavailable` envelope offering `retry` and `manual_entry`.
+  - **Purge:** `expires_at` is set to upload time plus 1 hour; the job runs `every hour` and
+    deletes pending rows past it, so an image lives under 2 hours at most. The policy is in
+    `docs/privacy.md`.
+- **Alternatives:** writing the row only after OCR (an image could be orphaned if the cleanup
+  delete failed); deleting the image after the confirm commit (it could outlive a confirmation);
+  storing the reason inside `draft_fields`; reading the whole chunked body and then checking its
+  size.
+- **Tradeoffs:** confirm's Storage call inside a transaction holds a row lock for up to the 10 s
+  Storage timeout. JPEG originals keep their EXIF metadata in the bucket for their short life,
+  because the specs require the stored bytes to match the upload.
+- **Affects:** R5, R10, R12, R13, R14, R17

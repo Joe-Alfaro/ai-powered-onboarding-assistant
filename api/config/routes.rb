@@ -21,6 +21,18 @@ Rails.application.routes.draw do
     resources :messages, only: :create
   end
 
+  # Consent, ID upload, the OCR draft and confirmation, and typed-in identity (R5, R10, R12, R17).
+  resources :consents, only: :create
+  resources :documents, only: %i[create show] do
+    member do
+      get :preview
+      post :confirm
+    end
+  end
+  namespace :onboarding do
+    resource :identity, only: :create
+  end
+
   # Defines the root path route ("/")
   # root "posts#index"
 
