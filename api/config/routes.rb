@@ -8,6 +8,14 @@ Rails.application.routes.draw do
   # Per-dependency status (R31). Public, for the uptime check.
   get "health" => "health#show"
 
+  # Scheduling (R6, R7, R36). The user always comes from the token.
+  resources :slots, only: :index
+  resources :bookings, only: %i[index show create update destroy]
+
+  namespace :admin do
+    resources :slots, only: %i[create destroy]
+  end
+
   # Defines the root path route ("/")
   # root "posts#index"
 
