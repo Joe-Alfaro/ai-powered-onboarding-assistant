@@ -46,5 +46,11 @@ module Api
 
     # Every log line is one JSON object (R31); Lograge is configured in an initializer.
     config.log_formatter = JsonLogFormatter.new
+
+    # Active Record encryption for personal-data columns (R18). Keys come from the environment;
+    # the test environment sets fixed, test-only keys.
+    config.active_record.encryption.primary_key = ENV["ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY"]
+    config.active_record.encryption.deterministic_key = ENV["ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY"]
+    config.active_record.encryption.key_derivation_salt = ENV["ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT"]
   end
 end

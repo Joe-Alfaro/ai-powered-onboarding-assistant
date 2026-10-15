@@ -518,3 +518,108 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Tradeoffs:** removing a slot drops its cancelled-booking history, which is acceptable for
   admin-managed availability and keeps the foreign key strict.
 - **Affects:** R6, R7, R8, R19, R24, R36, R37
+
+## 2026-10-15: Chat contracts set by the tests
+
+- **Decided by:** agent (test agent, chat)
+- **Decision:** the chat specs fix these interfaces for the implementation and for the slices
+  built in parallel:
+  - **Orchestrator:** `Chat::Orchestrator.new(user_id:, llm_client:).handle(message:, booking_id: nil,
+    slot_id: nil)` returns a result with `reply`, `intent`, `trigger`, `actions`, `assessment` and
+    `scheduling`. Each message gets a new orchestrator (as each request does), so the assessment
+    draft lives in the database between messages. Each intent goes to its handler,
+    `Chat::Handlers::ProvideDetails`, `AskQuestion`, `RequestReschedule`, `ExpressDistress` or
+    `OutOfScope`, instantiated once per message. The LLM's `response_schema` lists the five
+    intents and exactly the assessment schema's properties under `assessment_fields`.
+  - **Assessment schema:** `api/app/schemas/assessment.json`, a valid JSON Schema (validated with
+    the `json_schemer` gem) requiring `reason` and `preferred_window` (non-empty strings),
+    `urgency` (`low`, `medium` or `high`), `distress` (boolean) and `notes` (string, may be
+    empty), with no other properties. The record is complete, saved to `assessments` (with a
+    `schema_version`) and returned as `assessment` once reason, urgency and preferred window are
+    known; `distress` defaults to false and `notes` to an empty string. The express-distress
+    handler sets `distress` true itself. Every `assessments` row validates against the schema, so
+    an incomplete draft must live elsewhere. `assessment` is nil on every other message.
+  - **Validation:** LLM output with an intent outside the list, a missing or non-string `reply`,
+    missing or non-object `assessment_fields`, or a field value the schema rejects, and an
+    `Llm::InvalidResponseError`, are retried once. A second failure gives the out-of-scope reply
+    with a `continue_manually` action. Nothing from an invalid answer reaches the draft or the
+    database. Timeouts, 5xx, 429 and connection failures are not retried by the chat layer.
+  - **Fallbacks:** the out-of-scope reply is fixed text pointing back to onboarding, whatever the
+    LLM wrote. Empty or whitespace-only messages get a reply without an LLM call. Messages are
+    capped below 10,000 characters before they reach the LLM.
+  - **Reply guard:** a reply stating a day, date, clock time or booking claim that no handler
+    result backs is replaced by the handler's template. `request-reschedule` calls
+    `Scheduling::Booker.new(user_id:).reschedule(booking_id:, slot_id:)` only when the request
+    names both; its reply comes from the result's `success?`, `outcome` and `to_h`, and `to_h` is
+    returned as `scheduling`. The reply text states the outcome; the web shows the time from
+    `scheduling` in the user's local zone (R37), since the API doesn't know it.
+  - **Trigger:** `trigger` is `"high-stress-intent"` for express-distress and nil otherwise, even if
+    the LLM output carries a `trigger` key.
+  - **Consent seam:** `Consent::Ledger.withdrawn?(user_id)` is asked before every LLM call,
+    including the validation retry. True raises `Chat::ConsentWithdrawn`, which the API maps to
+    403 `consent_withdrawn`, with no LLM call and nothing saved. Confirmed by the orchestrator:
+    R12's consent gates the document upload, not chat.
+  - **Endpoint:** `POST /chat/messages` with `{ message, booking_id?, slot_id? }` returns
+    `{ reply, intent, trigger, actions, assessment, scheduling }`. A missing message is treated as
+    empty (200 with a reply, not 400). LLM failures return 503 with the `Llm::Error`'s `code`,
+    a message and `actions: ["retry", "manual_entry"]`. The fallback reply after two malformed
+    answers carries `manual_entry` in its `actions` too. `retry` and `manual_entry` are the
+    envelope's wire vocabulary, which the web reads (its ErrorNotice tests use them); the
+    service-level result keeps `Llm::Error`'s internal names (`try_again`, `continue_manually`)
+    and the chat API maps them at the HTTP boundary.
+  - **Eval sets:** `api/eval/chat/intents.yml` (at least 5 labeled utterances per intent),
+    `conversations.yml` (scripted turns with the fake LLM's output and the expected record) and
+    `adversarial.yml`. The specs and the eval harness (R27) share them.
+- **Alternatives:** gating chat on `Consent::Ledger.active?` as ARCHITECTURE says; requiring the
+  LLM to supply `distress` and `notes`; putting the slot time in the reschedule reply text;
+  sending `Llm::Error`'s `try_again` and `continue_manually` on the wire.
+- **Tradeoffs:** the onboarding flow has chat before consent, so `active?` would block every new
+  user's first message; `withdrawn?` still stops all LLM calls after revocation (R13), and the
+  consent slice must provide it. Defaults for `distress` and `notes` let real providers that omit
+  them still complete an assessment. Keeping times out of reply text keeps the guard simple and
+  local-time display in one place. Three action vocabularies existed (web: `retry` and
+  `manual_entry`; foundation: `retry`; `Llm::Error::ACTIONS`: `try_again` and
+  `continue_manually`); the orchestrator chose the web's as the wire contract, so the mapping
+  lives in one place at the API boundary.
+- **Affects:** R1, R2, R3, R9, R13, R16, R36
+
+## 2026-10-15: Chat implementation choices
+
+- **Decided by:** agent (implementation agent, chat)
+- **Decision:**
+  - **Draft storage:** the incomplete assessment lives in `conversations.assessment_draft`
+    (encrypted JSON), one conversation per user. `assessments` holds one row per user, upserted
+    when the draft completes or a later message changes a field. `assessment` is returned only on
+    the message that saved it.
+  - **Encryption:** `conversations.assessment_draft`, `messages.content` and `assessments.data` use
+    Active Record encryption. Keys come from the `ACTIVE_RECORD_ENCRYPTION_*` variables; the test
+    environment sets fixed test-only keys. `messages.intent` stays plain, since it is one of five
+    labels and holds no personal data.
+  - **Validation:** our own checks, not the provider's structured output, are the gate. Fields the
+    schema doesn't define are dropped; `null` and `""` count as not provided, because providers with
+    strict schemas tend to send every property. `minLength` is left out of the schema sent to the
+    LLM, since not every provider accepts it. The retry's system prompt names what was wrong
+    (intent, reply or a field path), never the rejected values.
+  - **Input:** messages are cut to 4,000 characters and stripped of control characters before they
+    are stored or sent. Content `Llm::PayloadBuilder` still refuses (an inline image) gets the
+    out-of-scope fallback with no LLM call.
+  - **Replies:** `request-reschedule` and `out-of-scope` never use the LLM's text. The reply guard
+    swaps any other LLM reply that mentions a day name, today, tomorrow, a clock time, a calendar
+    date or a booking claim for the handler's template. It errs towards swapping, so a harmless
+    "how are you feeling today?" also becomes the template.
+  - **Persistence:** each answered message saves the user and assistant turns as a pair, the
+    fallback included, and the last 10 are sent with the next call. Nothing is saved on a consent
+    withdrawal, an empty message or an LLM failure.
+  - **503 message:** the LLM failure envelope uses one fixed user-facing message, not the
+    `Llm::Error`'s own text, with the error's `code` and the mapped actions.
+  - **Seams:** `Consent::Ledger.withdrawn?` returns false until the consent slice fills it in.
+    `Scheduling::Booker` comes from the scheduling slice. `Llm::PayloadBuilder` gets an empty
+    identity until an onboarding record with the user's confirmed name, date of birth and
+    address exists, so chat redaction of those values starts when that slice wires it in.
+- **Alternatives:** a `status` column on `assessments` for drafts (breaks "every row validates");
+  one assessment row per completion; rejecting extra fields with a retry; a narrower reply guard.
+- **Tradeoffs:** upserting keeps one current assessment per user, matching "saved to the user's
+  onboarding record". A conservative guard costs an occasional generic reply but never lets an
+  unbacked time through (R3). Until the onboarding slice lands, chat sends identity values the
+  user types into a message as typed.
+- **Affects:** R1, R2, R3, R9, R13, R16, R18, R20

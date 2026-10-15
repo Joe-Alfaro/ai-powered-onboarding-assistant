@@ -1,0 +1,26 @@
+# The committed FAQ the ask-question intent answers from (ARCHITECTURE.md, Chatbot design). The
+# chatbot gets these as context and says it doesn't know anything they don't cover.
+- question: What happens during onboarding?
+  answer: >-
+    You confirm your identity details, either by uploading a photo of your ID or by typing them in,
+    tell the assistant a little about what you need, and then choose an appointment time.
+- question: Do I have to upload a photo of my ID?
+  answer: >-
+    No. You can type your details in yourself instead. If you do upload a photo, you review every
+    field before anything is saved, and the image is deleted once you confirm.
+- question: Who can see what I share?
+  answer: >-
+    Only the team handling your onboarding. Your details are encrypted when stored, and the
+    assistant only receives what it needs to help, with your name, date of birth and address
+    replaced by placeholders.
+- question: Can I change or cancel my appointment?
+  answer: >-
+    Yes. You can move or cancel it from the scheduler, or ask the assistant to move it after
+    choosing a new time there.
+- question: Can I withdraw my consent or delete my data?
+  answer: >-
+    Yes. You can withdraw consent or ask for deletion from the app at any time. Your images,
+    personal details and chat history are then permanently deleted.
+- question: What if the assistant isn't working?
+  answer: >-
+    You can try again, or continue manually by filling in the form yourself.

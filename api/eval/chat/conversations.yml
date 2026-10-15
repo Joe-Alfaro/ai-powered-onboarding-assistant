@@ -1,0 +1,74 @@
+# Scripted conversations that must each end in a schema-valid assessment (R2). Each turn has the
+# user's message and `scripted_llm`, the structured output a fake LLM returns for that turn in the
+# chat specs. The eval harness (R27) sends the same user messages to real providers, ignores
+# `scripted_llm` and checks only that the saved record validates against app/schemas/assessment.json.
+# `expected_assessment` is what the scripted run must save.
+- id: straightforward
+  turns:
+    - user: "Hi, I've been having trouble sleeping for a few months."
+      scripted_llm:
+        intent: provide-details
+        assessment_fields: { reason: "Trouble sleeping for a few months" }
+        reply: "Thanks for telling me. How urgent does this feel?"
+    - user: "Fairly urgent. Weekday mornings are best for me."
+      scripted_llm:
+        intent: provide-details
+        assessment_fields: { urgency: "medium", preferred_window: "Weekday mornings" }
+        reply: "Got it, thank you."
+  expected_assessment:
+    reason: "Trouble sleeping for a few months"
+    urgency: "medium"
+    preferred_window: "Weekday mornings"
+    distress: false
+    notes: ""
+
+- id: distress-and-question
+  turns:
+    - user: "I'm overwhelmed and scared, my back pain is getting worse every day."
+      scripted_llm:
+        intent: express-distress
+        assessment_fields: { reason: "Worsening back pain" }
+        reply: "I'm sorry this is so hard. We'll take it one step at a time."
+    - user: "Who can see what I tell you?"
+      scripted_llm:
+        intent: ask-question
+        assessment_fields: {}
+        reply: "Only the team handling your onboarding can see it."
+    - user: "It's urgent. Any afternoon works, and I've tried physiotherapy before."
+      scripted_llm:
+        intent: provide-details
+        assessment_fields:
+          urgency: "high"
+          preferred_window: "Any afternoon"
+          notes: "Has tried physiotherapy before"
+        reply: "Thank you, that's everything I need."
+  expected_assessment:
+    reason: "Worsening back pain"
+    urgency: "high"
+    preferred_window: "Any afternoon"
+    distress: true
+    notes: "Has tried physiotherapy before"
+
+- id: correction-and-detour
+  turns:
+    - user: "I want help managing stress at work. It's not urgent."
+      scripted_llm:
+        intent: provide-details
+        assessment_fields: { reason: "Managing stress at work", urgency: "low" }
+        reply: "Thanks. When would you like an appointment?"
+    - user: "Can you recommend a good movie first?"
+      scripted_llm:
+        intent: out-of-scope
+        assessment_fields: {}
+        reply: "Try a comedy!"
+    - user: "Actually it's more urgent than I said. Evenings after 6 work best."
+      scripted_llm:
+        intent: provide-details
+        assessment_fields: { urgency: "high", preferred_window: "Evenings after 6" }
+        reply: "Understood, I've updated that."
+  expected_assessment:
+    reason: "Managing stress at work"
+    urgency: "high"
+    preferred_window: "Evenings after 6"
+    distress: false
+    notes: ""

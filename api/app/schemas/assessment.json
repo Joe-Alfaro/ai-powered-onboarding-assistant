@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "assessment.json",
+  "title": "Assessment",
+  "description": "What the chatbot collects during onboarding (R2). Bump version when the fields change.",
+  "version": "1",
+  "type": "object",
+  "required": ["reason", "urgency", "preferred_window", "distress", "notes"],
+  "additionalProperties": false,
+  "properties": {
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Why the user is seeking the service, in their words."
+    },
+    "urgency": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "How soon the user feels they need help."
+    },
+    "preferred_window": {
+      "type": "string",
+      "minLength": 1,
+      "description": "When appointments generally suit the user, for example weekday mornings."
+    },
+    "distress": {
+      "type": "boolean",
+      "description": "Whether the user expressed distress during the conversation."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Any other relevant detail the user shared."
+    }
+  }
+}

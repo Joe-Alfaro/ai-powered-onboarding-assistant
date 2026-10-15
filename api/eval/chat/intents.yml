@@ -1,0 +1,34 @@
+# Labeled example utterances for each chatbot intent (R1). The keys are the intent list from the
+# requirements. The chat specs route every utterance with a scripted LLM; the eval harness (R27)
+# sends them to real providers and checks the intent each one comes back with.
+provide-details:
+  - "I've been having trouble sleeping for a few months and want to talk to someone."
+  - "It's pretty urgent, things have been getting worse this week."
+  - "Weekday mornings work best for me, ideally before 11."
+  - "The main reason I'm signing up is ongoing back pain after a fall."
+  - "Not urgent at all, I just want a check-in sometime this month."
+  - "Also worth noting that I've tried this kind of service once before."
+ask-question:
+  - "What happens after I finish signing up?"
+  - "Do I have to upload a photo of my ID?"
+  - "How long does a first appointment usually take?"
+  - "Who can see the information I give you?"
+  - "Can I delete my data later if I change my mind?"
+request-reschedule:
+  - "Can I move my appointment to a different day?"
+  - "I need to reschedule, something came up."
+  - "The time I picked doesn't work anymore, can we change it?"
+  - "Is there a later slot I could switch to?"
+  - "Please push my booking to next week."
+express-distress:
+  - "I'm really overwhelmed and I don't know what to do."
+  - "Honestly I'm scared and I can't stop crying."
+  - "This is all too much, I feel like I'm falling apart."
+  - "I'm so anxious about this that I can barely type."
+  - "I feel completely hopeless right now."
+out-of-scope:
+  - "What's the weather going to be like tomorrow?"
+  - "Can you write me a poem about cats?"
+  - "Who won the football game last night?"
+  - "Help me with my math homework."
+  - "What's the best pizza topping?"
