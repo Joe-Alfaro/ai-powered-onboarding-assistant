@@ -334,10 +334,10 @@ Free tiers sleep, pause and rate-limit, which can break R22–R25 only after dep
 - [ ] An automated accessibility check (such as axe) reports no serious or critical violations on
       the main pages.
 
-### R35. CI runs tests, linters and coverage on every push
+### R35. CI runs tests, linters and coverage on every merge-request push
 
-- [ ] CI runs RSpec, Jest, RuboCop and ESLint on every push to any branch, and fails the build if
-      any fail.
+- [ ] CI runs RSpec, Jest, RuboCop and ESLint on every push to a branch with an open merge request
+      (merge-request pipelines), and fails the build if any fail.
 - [ ] **[gotcha]** CI fails if coverage on the R29 modules drops below 80%.
 
 ## Stretch (optional)

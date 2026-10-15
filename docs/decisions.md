@@ -193,3 +193,49 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Tradeoffs:** per-group minimums target R29 exactly but leave non-core code unenforced. Skipping
   RSpec locally without a database keeps pushes fast and possible, and CI still catches failures.
 - **Affects:** R29, R32, R35
+
+## 2026-10-15: Self-hosted GitLab with a GitHub mirror
+
+- **Decided by:** user and orchestrator
+- **Replaces:** the gitlab.com hosting and the Railway CLI deploy from GitLab CI in "Repository
+  hosted on GitLab".
+- **Decision:** the repository is hosted on a self-hosted GitLab server (the `gitlab` remote), with
+  GitHub kept as a mirror (`origin`). Merge requests go to GitLab; no pull requests on GitHub.
+  `main` is protected and changes only through merge requests with a passing pipeline. Agents
+  follow the GitLab server safety rules in `CLAUDE.md`.
+- **Alternatives:** gitlab.com; GitHub only.
+- **Tradeoffs:** matches the setup of the user's other project on the same server. The server is
+  shared and has been taken down by runaway loops, so CI must stay small and polling is limited.
+  With no `main` pipelines, Railway can't be deployed from GitLab CI, so the deploy mechanism is
+  open again (see ARCHITECTURE.md).
+- **Affects:** R25, R35, Deliverables
+
+## 2026-10-15: R35 CI runs on merge-request pipelines (requirement change)
+
+- **Decided by:** user and orchestrator
+- **Replaces:** the "on every push to any branch" wording in R35, and "runs on every push to any
+  branch" in "Repository hosted on GitLab", and the CI Postgres service container and the
+  pre-push subset in "Scaffold choices for the quality gates".
+- **Decision:** R35's done check becomes "on every push to a branch with an open merge request
+  (merge-request pipelines)". The pipeline is a single `gates` job on a shell-executor runner that
+  runs `bin/gates`, the same script as the pre-push hook, including the secret scan. The job starts
+  its own Postgres container on port 55433 and removes it when it ends. Locally, `bin/gates` skips
+  RSpec when no Postgres is reachable and the secret scan when gitleaks isn't installed; in CI both
+  are required.
+- **Alternatives:** branch pipelines on every push; separate jobs per gate; a Postgres `services:`
+  container.
+- **Tradeoffs:** required by the server safety rules. Branches without an MR get no CI, but the
+  pre-push hook runs the same gates locally, and nothing reaches `main` without an MR pipeline.
+  One job gives less parallelism and less granular status than one job per gate.
+- **Affects:** R33, R35
+
+## 2026-10-15: Uptime check mechanism is open again
+
+- **Decided by:** user and orchestrator
+- **Replaces:** "Uptime check runs on GitHub Actions" and the GitLab pipeline schedule in
+  "Repository hosted on GitLab".
+- **Decision:** the R25 uptime check can't be a GitLab scheduled pipeline, because schedules are
+  forbidden on the GitLab server. The mechanism is an open question and isn't built yet.
+- **Alternatives:** a GitHub Actions cron on the GitHub mirror; an external free uptime monitor.
+- **Tradeoffs:** deferred until deployment work starts.
+- **Affects:** R25

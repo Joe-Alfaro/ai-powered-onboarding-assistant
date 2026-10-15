@@ -31,7 +31,7 @@ flowchart LR
     ST[(Storage<br/>private bucket)]
   end
   LLM[LLM provider<br/>Claude / Groq / Gemini / Ollama]
-  UP[Uptime check<br/>GitLab pipeline schedule]
+  UP[Uptime check<br/>mechanism open]
 
   W -- sign in --> AUTH
   W -- pages --> WEB
@@ -277,7 +277,7 @@ Python sidecar service behind the same `Ocr::Extractor` interface.
 | R20 Data to LLM | `Llm::PayloadBuilder` allowlist, contract spec, `docs/data-to-llm.md`, `docs/compliance.md` |
 | R21 No paid API | Free provider via env vars, harness skips missing keys |
 | R22–R24 Latency | k6 scripts, booking timing logs, OCR timing script |
-| R25 Uptime | `/health`, scheduled GitLab pipeline ping, `bin/uptime-report` |
+| R25 Uptime | `/health`, an external uptime check (mechanism open), an uptime report |
 | R26 Golden set | `api/eval/golden/` with generator script |
 | R27 Scorecard | `rake ai:eval` |
 | R28 Provider comparison | `rake ai:eval PROVIDERS=all`, README results table |
@@ -287,7 +287,7 @@ Python sidecar service behind the same `Ocr::Extractor` interface.
 | R32 Clean checkout | Supabase CLI local stack, docker compose, `bin/setup`, seeds |
 | R33 Environment config | `.env.example` files, env check script, secret scan |
 | R34 Accessibility | Semantic forms, jest-axe, `@axe-core/playwright` |
-| R35 CI | GitLab CI pipeline (`.gitlab-ci.yml`) |
+| R35 CI | GitLab merge-request pipeline (`.gitlab-ci.yml`) running `bin/gates` |
 | R36 Reschedule and cancel | `Booker`, schedule page, `request-reschedule` handler |
 | R37 Timezones | timestamptz UTC storage, `Intl.DateTimeFormat` with zone label |
 | R38 Deployed performance | Railway always-on, k6 against the deployed URL, health ping touching the database |
@@ -367,15 +367,17 @@ Test-first, one requirement per test/implementation pair, as in the delivery loo
 
 **Quality gates**
 
-- GitLab CI on every push to any branch: RuboCop, RSpec with SimpleCov thresholds, ESLint, Prettier check,
-  `tsc --noEmit`, Jest with coverage thresholds, the env check script, and a secret scan.
-  Playwright runs on pushes to `main` and on merge requests.
-- A Husky pre-push hook runs the fast subset locally.
+- GitLab merge-request pipelines (on every push to a branch with an open MR) run one `gates` job:
+  RuboCop, RSpec with SimpleCov thresholds, ESLint, Prettier check, `tsc --noEmit`, Jest with
+  coverage thresholds, the env check script, and a secret scan. Playwright runs in the same
+  pipeline. There are no branch or `main` pipelines (see the GitLab server safety rules in
+  `CLAUDE.md`).
+- A Husky pre-push hook runs the same `bin/gates` script locally.
 
 ## Deployment on Railway
 
-Two Railway services from this repo, plus a hosted Supabase project. GitLab CI deploys them with
-the Railway CLI, since Railway's native repository integration supports only GitHub.
+Two Railway services from this repo, plus a hosted Supabase project. How deploys are triggered
+is an open question (see below): GitLab has no `main` pipelines to deploy from.
 
 | Service | Root | Build | Start |
 | --- | --- | --- | --- |
@@ -394,11 +396,10 @@ the Railway CLI, since Railway's native repository integration supports only Git
 
 Secrets are entered in Railway by the user. Railway provides HTTPS on both services.
 
-**Uptime check:** a GitLab pipeline schedule runs an uptime job that pings the deployed `/health`
-every 5 minutes from outside Railway. Each run's pass or fail is its record, and
-`bin/uptime-report` computes the uptime percentage for the evaluation window from the schedule's
-pipeline history. GitLab may delay scheduled pipelines, so the report counts the checks that
-actually ran rather than assuming one every 5 minutes.
+**Uptime check:** an open question (see below). It must ping the deployed `/health` every 5 minutes
+from outside Railway and keep a record of each check, so the uptime percentage for the evaluation
+window can be computed from the checks that actually ran. GitLab scheduled pipelines are not
+allowed.
 
 **Local and grader setup:** `supabase start` runs Auth, Postgres and Storage locally, then
 `docker compose up` runs the API and web against it. `bin/setup` migrates, seeds slots, demo users
@@ -420,5 +421,9 @@ app and the eval run with no paid key.
 
 - **API keys:** Groq, Gemini and Claude keys are already in the local `.env`; the user sets the
   same keys in Railway.
-- **Repository:** resolved; the repository is public on GitLab
-  ([decision](docs/decisions.md#2026-10-15-repository-hosted-on-gitlab)).
+- **Repository:** resolved; merge requests go to a self-hosted GitLab, with GitHub as a mirror
+  ([decision](docs/decisions.md#2026-10-15-self-hosted-gitlab-with-a-github-mirror)).
+- **Uptime check mechanism (R25):** a GitHub Actions cron on the GitHub mirror, or an external free
+  uptime monitor.
+- **Deploy trigger:** Railway's native GitHub integration on the GitHub mirror, or the Railway CLI
+  run by hand.
