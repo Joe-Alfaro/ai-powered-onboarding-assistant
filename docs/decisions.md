@@ -664,3 +664,24 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   but tests other zones only through the `timeZone` option. Keeping later steps unlinked stops
   users skipping consent or confirmation from the nav.
 - **Affects:** R16, R19, R30, R34, R37
+
+## 2026-10-15: Web shell implementation choices
+
+- **Decided by:** agent (implementation agent, web-shell)
+- **Decision:**
+  - `DEFAULT_TIMEOUT_MS` is 8 s: 2 s of headroom over the API's 6 s LLM timeout for its 503
+    envelope to arrive, and 2 s under the 10 s budget for the retry to show (R30).
+  - A 4xx with no envelope becomes code `request_failed` with no actions; a missing token becomes
+    `unauthenticated` with status 401 and no actions, so the page sends the user to sign in rather
+    than retrying.
+  - `ErrorNotice` shows an action's button only when the page passes the matching handler, so a
+    page can't show a button that does nothing.
+  - `formatLocalDateTime` shows weekday, date, year, time and the short zone name, using
+    `Intl.DateTimeFormat` with no date library.
+  - `SignInForm` is built and tested but not yet placed on a page: the home page test renders it
+    outside the App Router, where `useRouter` throws. The page slice that owns sign-in mounts it
+    and routes to `/chat` in `onSignedIn`.
+- **Alternatives:** a timeout of exactly 6 s or 9.5 s; always showing the buttons; date-fns-tz.
+- **Tradeoffs:** 8 s leaves margin on both sides at the cost of a slightly later timeout message.
+  Deferring the sign-in page keeps this slice inside its tests.
+- **Affects:** R16, R19, R30, R37

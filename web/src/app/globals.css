@@ -1,0 +1,9 @@
+/* The skip link stays off-screen until it gets keyboard focus (R34). */
+.skip-link {
+  position: absolute;
+  left: -10000px;
+}
+
+.skip-link:focus {
+  position: static;
+}
