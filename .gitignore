@@ -1,5 +1,8 @@
 local-docs/
+# No trailing slash, so this also matches _private when it is a symlink (as in worktrees).
+_private
 .env
 .env.*
 !.env.example
 .DS_Store
+node_modules/

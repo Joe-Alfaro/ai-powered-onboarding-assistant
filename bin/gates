@@ -1,0 +1,69 @@
+#!/bin/sh
+# Quality gates, shared by the pre-push hook and the CI gates job.
+# Locally, RSpec is skipped when no Postgres is reachable and the secret scan is skipped when
+# gitleaks isn't installed. In CI (CI=true) both are required.
+set -eu
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+in_ci="${CI:-false}"
+
+step() {
+  echo "gates: $1"
+}
+
+# Install dependencies only when the lockfile changed since the last install.
+install_web_deps() {
+  hash="$(shasum package-lock.json | cut -d' ' -f1)"
+  if [ -f node_modules/.lockfile-hash ] && [ "$(cat node_modules/.lockfile-hash)" = "$hash" ]; then
+    return
+  fi
+  npm ci --silent --no-audit --no-fund
+  echo "$hash" > node_modules/.lockfile-hash
+}
+
+cd "$root/api"
+if [ "$in_ci" = "true" ]; then
+  bundle check > /dev/null || bundle install --quiet
+fi
+step "rubocop"
+bundle exec rubocop --format quiet
+
+cd "$root/web"
+if [ "$in_ci" = "true" ]; then
+  install_web_deps
+fi
+step "eslint"
+npm run --silent lint
+step "prettier"
+npm run --silent format:check -- --log-level warn
+step "tsc"
+npm run --silent typecheck > /dev/null
+step "jest (with coverage thresholds)"
+npm run --silent test:coverage -- --silent --coverageReporters=text-summary
+
+cd "$root/api"
+db_host="${DB_HOST:-localhost}"
+db_port="${DB_PORT:-5433}"
+if nc -z -w 2 "$db_host" "$db_port" 2> /dev/null; then
+  step "rspec (with per-module coverage minimums)"
+  RAILS_ENV=test bin/rails db:prepare > /dev/null
+  bundle exec rspec
+elif [ "$in_ci" = "true" ]; then
+  echo "gates: no Postgres at $db_host:$db_port" >&2
+  exit 1
+else
+  step "skipping rspec, no Postgres at $db_host:$db_port (start it with: docker compose up -d postgres)"
+fi
+
+cd "$root"
+if command -v gitleaks > /dev/null; then
+  step "secret scan (full history)"
+  gitleaks git --redact --no-banner --log-level warn .
+elif [ "$in_ci" = "true" ]; then
+  echo "gates: gitleaks is not installed" >&2
+  exit 1
+else
+  step "skipping secret scan, gitleaks not installed (brew install gitleaks)"
+fi
+
+step "all passed"

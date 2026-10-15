@@ -143,3 +143,99 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Decision:** approved the requirements file (gotchas included) and ARCHITECTURE.md, including
   the agent entries above marked "pending user approval". Implementation can start.
 - **Affects:** all
+
+## 2026-10-15: Repository hosted on GitLab
+
+- **Decided by:** user
+- **Replaces:** "Uptime check runs on GitHub Actions", the GitHub Actions CI named in
+  ARCHITECTURE.md, the "Public GitHub repository" deliverable, and the open question on the GitHub
+  repository name and visibility.
+- **Decision:** the repository lives on gitlab.com and is public now. Every change goes on a
+  feature branch and reaches `main` through a Merge Request after CI passes. CI is GitLab CI
+  (`.gitlab-ci.yml`). The R25 uptime check is a GitLab pipeline schedule that pings `/health`
+  every 5 minutes, and the uptime report reads that schedule's pipeline history. Railway deploys
+  through the Railway CLI, because Railway's native repository integration supports only GitHub.
+- **Alternatives:** stay on GitHub with GitHub Actions; mirror GitLab to GitHub so Railway's
+  native integration still works.
+- **Tradeoffs:** GitLab CI covers the same gates and schedules. Deploying with the Railway CLI
+  needs a Railway token stored as a GitLab CI variable instead of a click-through integration.
+  Scheduled pipelines can also be delayed, so the uptime report still counts the checks that ran.
+- **Affects:** R25, R35, Deliverables
+
+## 2026-10-15: Workers may install system dependencies with Homebrew
+
+- **Decided by:** user
+- **Decision:** agents may `brew install` the system dependencies the architecture needs
+  (Tesseract, libvips, libheif, the Supabase CLI, k6) when their task needs them.
+- **Alternatives:** ask the user before each install; run everything only inside Docker.
+- **Tradeoffs:** faster local work, at the cost of agents changing the user's machine. The README
+  still has to list these dependencies for a clean checkout.
+- **Affects:** R32
+
+## 2026-10-15: Scaffold choices for the quality gates
+
+- **Decided by:** agent
+- **Decision:**
+  - SimpleCov groups map the R29 modules to `app/services/ocr`, `app/services/chat` and
+    `app/services/scheduling`, each with an 80% line minimum. A group with no files counts as
+    100%, so the build passes until code lands, and every file under `app/` and `lib/` is
+    reported even if no spec loads it, so an untested service counts as 0%.
+  - Jest enforces an 80% global threshold on lines, branches, functions and statements.
+  - Local Postgres for development and tests runs from `docker-compose.yml` on host port 5433
+    (`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`), so it doesn't collide with a Postgres
+    already on 5432. CI uses a Postgres 17 service container.
+  - The Rails app skips Action Mailer, Action Mailbox, Action Text, Active Storage, Action
+    Cable, Kamal and Thruster, which the architecture doesn't use.
+  - The pre-push hook runs RuboCop, ESLint, Prettier, `tsc` and Jest, and RSpec only when the
+    database is reachable. CI always runs RSpec and the secret scan.
+- **Alternatives:** an overall coverage minimum instead of per-group; mocking the database; a
+  pre-push hook that requires Postgres.
+- **Tradeoffs:** per-group minimums target R29 exactly but leave non-core code unenforced. Skipping
+  RSpec locally without a database keeps pushes fast and possible, and CI still catches failures.
+- **Affects:** R29, R32, R35
+
+## 2026-10-15: Self-hosted GitLab with a GitHub mirror
+
+- **Decided by:** user and orchestrator
+- **Replaces:** the gitlab.com hosting and the Railway CLI deploy from GitLab CI in "Repository
+  hosted on GitLab".
+- **Decision:** the repository is hosted on a self-hosted GitLab server (the `gitlab` remote), with
+  GitHub kept as a mirror (`origin`). Merge requests go to GitLab; no pull requests on GitHub.
+  `main` is protected and changes only through merge requests with a passing pipeline. Agents
+  follow the GitLab server safety rules in `CLAUDE.md`.
+- **Alternatives:** gitlab.com; GitHub only.
+- **Tradeoffs:** matches the setup of the user's other project on the same server. The server is
+  shared and has been taken down by runaway loops, so CI must stay small and polling is limited.
+  With no `main` pipelines, Railway can't be deployed from GitLab CI, so the deploy mechanism is
+  open again (see ARCHITECTURE.md).
+- **Affects:** R25, R35, Deliverables
+
+## 2026-10-15: R35 CI runs on merge-request pipelines (requirement change)
+
+- **Decided by:** user and orchestrator
+- **Replaces:** the "on every push to any branch" wording in R35, and "runs on every push to any
+  branch" in "Repository hosted on GitLab", and the CI Postgres service container and the
+  pre-push subset in "Scaffold choices for the quality gates".
+- **Decision:** R35's done check becomes "on every push to a branch with an open merge request
+  (merge-request pipelines)". The pipeline is a single `gates` job on a shell-executor runner that
+  runs `bin/gates`, the same script as the pre-push hook, including the secret scan. The job starts
+  its own Postgres container on port 55433 and removes it when it ends. Locally, `bin/gates` skips
+  RSpec when no Postgres is reachable and the secret scan when gitleaks isn't installed; in CI both
+  are required.
+- **Alternatives:** branch pipelines on every push; separate jobs per gate; a Postgres `services:`
+  container.
+- **Tradeoffs:** required by the server safety rules. Branches without an MR get no CI, but the
+  pre-push hook runs the same gates locally, and nothing reaches `main` without an MR pipeline.
+  One job gives less parallelism and less granular status than one job per gate.
+- **Affects:** R33, R35
+
+## 2026-10-15: Uptime check mechanism is open again
+
+- **Decided by:** user and orchestrator
+- **Replaces:** "Uptime check runs on GitHub Actions" and the GitLab pipeline schedule in
+  "Repository hosted on GitLab".
+- **Decision:** the R25 uptime check can't be a GitLab scheduled pipeline, because schedules are
+  forbidden on the GitLab server. The mechanism is an open question and isn't built yet.
+- **Alternatives:** a GitHub Actions cron on the GitHub mirror; an external free uptime monitor.
+- **Tradeoffs:** deferred until deployment work starts.
+- **Affects:** R25

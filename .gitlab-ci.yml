@@ -1,0 +1,39 @@
+# Quality gates for merge requests. Any failure fails the pipeline.
+# Runs on a shell-executor runner on a shared host, so this file follows the GitLab server
+# safety rules in CLAUDE.md: merge-request pipelines only, one job, no services, artifacts or
+# remote cache, no retries, and small logs.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+variables:
+  # Full history for the secret scan.
+  GIT_DEPTH: "0"
+  # Keep installed dependencies between runs; bin/gates reinstalls only when a lockfile changes.
+  GIT_CLEAN_FLAGS: -ffdx -e node_modules/ -e vendor/
+  HUSKY: "0"
+  BUNDLE_PATH: vendor/bundle
+  # Dedicated port so the job's Postgres never collides with local databases.
+  DB_HOST: localhost
+  DB_PORT: "55433"
+  DB_USER: postgres
+  DB_PASSWORD: postgres
+  CI_POSTGRES_NAME: onboarding-ci-postgres-$CI_JOB_ID
+
+gates:
+  interruptible: true
+  retry: 0
+  timeout: 30m
+  before_script:
+    - export PATH="/opt/homebrew/opt/ruby/bin:/opt/homebrew/lib/ruby/gems/3.4.0/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+    - docker run -d --rm --name "$CI_POSTGRES_NAME" --label ci.job="$CI_JOB_ID"
+      -e POSTGRES_USER="$DB_USER" -e POSTGRES_PASSWORD="$DB_PASSWORD"
+      -p "127.0.0.1:$DB_PORT:5432" postgres:17 > /dev/null
+    # Wait up to 60 s for Postgres to accept connections.
+    - i=0; until docker exec "$CI_POSTGRES_NAME" pg_isready -q -U "$DB_USER"; do i=$((i+1)); [ "$i" -lt 30 ] || exit 1; sleep 2; done
+  script:
+    - bin/gates
+  after_script:
+    - export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+    - docker rm -f "$CI_POSTGRES_NAME" > /dev/null 2>&1 || true
