@@ -1,11 +1,15 @@
 # This file is copied to spec/ when you run 'rails generate rspec:install'
 require 'spec_helper'
 ENV['RAILS_ENV'] ||= 'test'
-# Fixed, fake Supabase and audit settings so specs never depend on a developer's environment.
+# Fixed, fake Supabase, storage, upload and audit settings so specs never depend on a developer's environment.
 # Set before the app loads in case it reads them at boot.
 ENV["SUPABASE_URL"] = "https://project.supabase.test"
 ENV["SUPABASE_JWKS_URL"] = "https://project.supabase.test/auth/v1/.well-known/jwks.json"
 ENV["AUDIT_HMAC_KEY"] = "spec-audit-hmac-key"
+ENV["SUPABASE_SERVICE_ROLE_KEY"] = "spec-service-role-key"
+ENV["STORAGE_BUCKET"] = "spec-id-documents"
+ENV["MAX_UPLOAD_MB"] = "10"
+ENV["OCR_CONFIDENCE_THRESHOLD"] = "60"
 require_relative '../config/environment'
 # Prevent database truncation if the environment is production
 abort("The Rails environment is running in production mode!") if Rails.env.production?

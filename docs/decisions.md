@@ -749,3 +749,60 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   a large photo reads worse. Preprocessing plus Tesseract takes about 0.5 s per image on an
   Apple M2, but Railway's CPU is unmeasured (R23).
 - **Affects:** R4, R10, R11, R23, R26
+
+## 2026-10-15: Documents and consent contracts set by the tests
+
+- **Decided by:** agent (test agent, documents)
+- **Decision:**
+  - **Consent:** `Consent::Ledger.grant!(user_id:, text_version:)`, `.revoke!(user_id:)` and
+    `.active?(user_id)`. Each grant is a new `consents` row (`user_id`, `text_version`,
+    `granted_at`); revoking sets `revoked_at`, and a later grant makes a new row. A blank version
+    raises `ActiveRecord::RecordInvalid`. `POST /consents` with `{ text_version }` returns 201
+    `{ consent: { text_version, granted_at } }` for the token's user.
+  - **Upload:** `POST /documents` takes a multipart `file`. Every accepted upload returns 200
+    `{ document: { id, status: "pending", manual_entry, reason, fields } }`, where `fields` always
+    has `full_name`, `date_of_birth` and `address`, each `null` or `{ value, confidence, level }`,
+    and `reason` is the `Ocr::Result` reason as a string. OCR failure, an OCR exception, no text,
+    low confidence and no fields are all 200 with `manual_entry: true`, never a 500.
+  - **Errors:** no active consent is 403 `consent_required`, checked before anything is stored or
+    run, and again under a row lock before the draft is written (a revocation during OCR also
+    gives 403 and leaves no draft and no stored image). A body over `MAX_UPLOAD_MB` is 413
+    `file_too_large`, whose message names the limit; a non-image by content is 415
+    `unsupported_file_type`; a truncated or undecodable image is 422 `unreadable_image`; no file is
+    400 `invalid_request`. The 413, 415 and 422 envelopes offer `manual_entry`.
+  - **Size limit:** the specs call the Rack app with a lazily generated 50 MB body that counts
+    what is read. With a declared `Content-Length` over the limit, under 1 MB may be read; with
+    no `Content-Length`, reading must stop within 1 MB past the limit.
+  - **HEIC is converted, not rejected:** a HEIC upload (recognized by content, whatever its name)
+    is converted to JPEG or PNG before OCR and before storage, so the browser can show the
+    preview. libvips on the host and the Docker image needs HEIF support (libheif).
+  - **OCR seam:** the lifecycle gets its engine from `Ocr::Extractor.new` on each upload and calls
+    `#call(path)` with a local copy of the (converted) image; most specs stub `.new`. Two specs
+    run real Tesseract on a JPEG and a HEIC of the sample card.
+  - **Storage:** the Supabase Storage REST API under `SUPABASE_URL/storage/v1`, bucket
+    `STORAGE_BUCKET`, authenticated with `Authorization: Bearer SUPABASE_SERVICE_ROLE_KEY`. The
+    specs fake it at the HTTP boundary (`spec/support/fake_supabase_storage.rb`), including its
+    400-with-`statusCode: "404"` for a missing object.
+  - **Draft and confirm:** OCR output lives only in `document_uploads.draft_fields` (only the three
+    fields); `onboardings` gets identity values only from `POST /documents/:id/confirm` (JSON
+    `full_name`, `date_of_birth` as `YYYY-MM-DD`, `address`), which saves them as sent with
+    `identity_source: "ocr"` and `confirmed_at`, deletes the image from storage and clears the
+    draft. A blank field or an impossible or future date is 422 `validation_failed` and changes
+    nothing. Other params, such as `identity_source` or `user_id`, are ignored.
+  - **Reads:** `GET /documents/:id` returns the pending draft. `GET /documents/:id/preview` signs
+    a new URL on every call and returns `{ url, expires_in: 60 }`, with `url` the absolute signed
+    URL. After confirm, after purge, or for another user's upload both return 404 and sign nothing.
+  - **Manual entry:** `POST /onboarding/identity` with the same three fields saves them with
+    `identity_source: "manual"`. It needs no consent record, because no image is involved.
+  - **Purge:** `Documents::PurgeExpiredUploadsJob` hard-deletes the storage object and the
+    `document_uploads` row for every unconfirmed upload older than 1 hour, tolerates an object
+    that is already gone, and is a production task in `config/recurring.yml`.
+  - **Filenames:** the uploaded filename appears in no column, storage key, log line or response.
+- **Alternatives:** rejecting HEIC with a message (simpler, but iPhone users would hit it often);
+  201 for a successful upload and 200 for manual entry; requiring consent for manual entry;
+  keeping the purged row with a status.
+- **Tradeoffs:** HEIC conversion depends on libheif in every environment, which the CI host's
+  Homebrew libvips has. A 200 for every OCR outcome means the web app reads `manual_entry`, not
+  the status, to decide what to show. Stubbing `Ocr::Extractor.new` ties the lifecycle to building
+  its engine per upload, which is cheap.
+- **Affects:** R5, R10, R11, R12, R13, R14, R17, R19

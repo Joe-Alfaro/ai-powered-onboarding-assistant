@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Regenerates the document upload spec fixtures from the OCR fixtures with the vips CLI. Every
+# value on them is made up.
+# Usage: spec/fixtures/files/documents/make_fixtures
+set -euo pipefail
+
+dir="$(cd "$(dirname "$0")" && pwd)"
+source_card="$dir/../ocr/clean_id.png"
+
+# A real JPEG and a real HEIC phone-style photo of the sample card.
+vips copy "$source_card" "$dir/id.jpg[Q=85]"
+vips copy "$source_card" "$dir/id.heic[Q=60]"
+
+# A JPEG cut off halfway: the magic bytes are right but it can't be decoded.
+head -c "$(( $(wc -c < "$dir/id.jpg") / 2 ))" "$dir/id.jpg" > "$dir/truncated.jpg"
+
+# PNG magic bytes followed by junk.
+{ printf '\x89PNG\r\n\x1a\n'; head -c 2048 /dev/zero | tr '\0' 'x'; } > "$dir/corrupt_body.png"
+
+# A PDF renamed to look like a photo.
+printf '%%PDF-1.4\n%% sample, not an image\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%%%EOF\n' \
+  > "$dir/renamed_pdf.jpg"
