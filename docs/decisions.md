@@ -488,3 +488,33 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   since they check only the response and which slots hold active bookings. The parallel specs
   run without transactional fixtures and widen the connection pool to 25 for their duration.
 - **Affects:** R6, R7, R8, R19, R24, R36, R37
+
+## 2026-10-15: Scheduling implementation choices
+
+- **Decided by:** agent (implementation agent, scheduling)
+- **Decision:**
+  - **UUID keys:** `slots` and `bookings` use `gen_random_uuid()` primary keys, and
+    `bookings.user_id` is a `uuid` (the token's `sub`). An unknown or malformed ID casts to no
+    match and reads as `not_found`, never as a 500 or a partial integer match.
+  - **Reschedule in place:** `Booker#reschedule` locks the caller's active booking row and
+    updates its `slot_id`, so the booking ID survives the move. A unique violation rolls back the
+    savepoint and returns `slot_taken`.
+  - **Conflict mapping:** `Booker#book` checks for an existing booking first for a clear outcome,
+    then relies on the partial unique indexes. A `RecordNotUnique` is mapped by the violated
+    constraint's name: the slot index gives `slot_taken`, the user index gives `booking_exists`.
+    Each change runs with `requires_new: true`, so a violation never aborts a caller's
+    transaction.
+  - **Admin slot removal:** `DELETE /admin/slots/:id` locks the slot row and refuses with 409
+    `slot_booked` while it has an active booking; otherwise it deletes the slot and its cancelled
+    bookings. The row lock conflicts with the key-share lock a new booking's foreign key takes, so
+    a booking can't land between the check and the delete.
+  - **Error actions:** `slot_taken`, `booking_exists`, `not_found` and `slot_booked` carry an
+    empty `actions` list, since the envelope vocabulary is only `retry` and `manual_entry` and
+    neither applies. The web app branches on the code.
+  - **R24:** no extra log event. The foundation's Lograge line for each bookings request carries
+    method, path, status and duration.
+- **Alternatives:** bigint keys; reschedule as cancel plus a new row; a 409 retry loop; cascading
+  slot deletes to active bookings.
+- **Tradeoffs:** removing a slot drops its cancelled-booking history, which is acceptable for
+  admin-managed availability and keeps the foreign key strict.
+- **Affects:** R6, R7, R8, R19, R24, R36, R37
