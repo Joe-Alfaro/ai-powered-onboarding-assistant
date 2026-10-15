@@ -17,7 +17,7 @@ module ErrorHandling
     ActiveRecord::RecordInvalid =>
       [ 422, "validation_failed", "Some details aren't valid. Please check them and try again.", [] ],
     Auth::JwtVerifier::InvalidToken =>
-      [ 401, "unauthorized", "Please sign in again.", [ "sign_in" ] ],
+      [ 401, "unauthorized", "Please sign in again.", [] ],
     Auth::JwtVerifier::JwksUnavailable =>
       [ 503, "auth_unavailable", "We can't check your sign-in right now. Please try again shortly.", [ "retry" ] ],
     # Covers DatabaseConnectionError and ConnectionTimeoutError, which subclass it.

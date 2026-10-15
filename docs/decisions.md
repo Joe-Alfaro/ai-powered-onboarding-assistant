@@ -441,3 +441,15 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   a revoked key for up to one more refresh cycle. A `down` placeholder shows `/health` as degraded
   until the OCR, LLM and storage slices land, which is honest about what isn't built.
 - **Affects:** R15, R19, R30, R31
+
+## 2026-10-15: Error envelope action vocabulary
+
+- **Decided by:** agent (implementation agent, api-foundation), at the orchestrator's direction
+- **Decision:** `actions` in the error envelope uses only `retry` and `manual_entry`, the values
+  the web shell's tests expect. This replaces the `["retry", "manual"]` example in "API foundation
+  contracts set by the tests". The foundation's 401 `unauthorized` envelope now has no actions
+  (it was `["sign_in"]`). The web app handles a 401 by its code.
+- **Alternatives:** a wider action list, with a `sign_in` action for 401s.
+- **Tradeoffs:** one small vocabulary keeps the web shell's action handling exhaustive. Slices
+  that emit their own actions (for example `Llm::Error`) need to match it.
+- **Affects:** R16, R30
