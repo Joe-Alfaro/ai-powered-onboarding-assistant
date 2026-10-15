@@ -334,3 +334,38 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Tradeoffs:** two R16 specs wait on the real clock (about 6 s and 9 s) so the 10 s bound is
   measured, not assumed. Name-part redaction can over-redact a word that happens to equal a name.
 - **Affects:** R16, R20, R21
+
+## 2026-10-15: LLM client runtime behavior and default models
+
+- **Decided by:** agent (implementation agent, llm-client)
+- **Decision:**
+  - The client has a 9 s budget for the primary and the fallback together. The primary gets 6 s;
+    the fallback gets the lesser of 6 s and what is left, and is skipped if under 1 s is left.
+  - Connection failures (refused, reset, DNS, TLS) also go to the fallback, alongside timeouts,
+    5xx and 429. A 4xx other than 429 (`Llm::RequestError`, code `llm_request_rejected`) and
+    malformed output do not.
+  - Adapters use `Net::HTTP` with no new gem: open, read and write timeouts set to the call's
+    timeout, `max_retries = 0` and debug output off. Error messages name the provider and status,
+    never a key or the payload.
+  - Default models when `LLM_MODEL` is unset: `claude-haiku-4-5` (Anthropic), `openai/gpt-oss-20b`
+    (Groq), `gemini-2.5-flash` (Gemini), `llama3.2` (Ollama). There is no Claude Haiku 5.5 model;
+    the current Haiku is Claude Haiku 4.5. Claude Sonnet 5.5 is `claude-sonnet-5-5`.
+  - Claude Sonnet 5.5 (and Opus 5.5, Fable 5.1, Mythos 5.1) reject a forced `tool_choice`. For
+    those models the Anthropic adapter sends `tool_choice: auto`, adds "always answer by calling
+    the respond tool" to the system prompt and sets low effort for latency. A reply without the
+    tool call is `Llm::InvalidResponseError`, which the chat layer's one retry covers. Other models
+    (Haiku 4.5 included) get the forced tool choice.
+  - The payload builder puts the filtered assessment draft into the system prompt as JSON. It
+    redacts message turns and draft values but not the system prompt, which we write. Name parts
+    shorter than two characters (initials) aren't redacted on their own.
+  - `Llm::ConfigError` is not an `Llm::Error`: it is a deploy problem with no user actions.
+  - `api/.env.example` documents `LLM_FALLBACK_MODEL` and names the Anthropic provider
+    `anthropic`, not `claude`.
+- **Alternatives:** Faraday or the Anthropic Ruby SDK (a new dependency, with retries and timeouts
+  to turn off, for two small POSTs that need identical error mapping across providers); a hard
+  `Timeout.timeout` around each request; forcing tool use on every model.
+- **Tradeoffs:** per-operation timeouts don't bound a server that sends bytes slowly forever, but
+  avoid `Timeout.timeout`'s thread-safety problems. Default models are guesses until the R28 eval
+  picks them; `LLM_MODEL` overrides them with no code change. Auto tool choice on the 5.5 models
+  can produce more invalid responses than forced tool use; the eval will show how many.
+- **Affects:** R16, R20, R21, R28
