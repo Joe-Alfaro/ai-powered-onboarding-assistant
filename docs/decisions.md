@@ -254,3 +254,42 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   Railway CLI instead of a push-to-deploy integration, and the uptime check needs an outside
   service.
 - **Affects:** R25, Deliverables
+
+## 2026-10-15: Trigger engine contract set by the R9 tests
+
+- **Decided by:** agent (test agent, web-trigger-engine)
+- **Decision:** the R9 tests fix this contract for the implementer. `web/src/support/triggers.ts`
+  exports `TriggerId`, the `TRIGGERS` table (`{ content: { heading, message } }` per trigger),
+  `DEFAULT_LONG_PAUSE_SECONDS` (45) and `longPauseThresholdMs()`, which reads
+  `NEXT_PUBLIC_LONG_PAUSE_SECONDS` and falls back to 45 s for an empty, non-numeric or non-positive
+  value. `web/src/support/triggerEngine.ts` exports `createTriggerEngine({ longPauseMs? })` with
+  `start`, `stop`, `reportUpload({ ok, status? })`, `reportChatResponse({ reply, trigger? })`,
+  `active()` and `subscribe()`. `<SupportiveContent engine={engine} />` renders each active
+  trigger's table content as a heading and message inside a `status` live region. A chat response
+  activates content only when `trigger` is exactly `"high-stress-intent"`; any other flag value
+  (including other trigger IDs) and all reply text are ignored. An upload with `ok: false`,
+  whether rejected (4xx/5xx) or failed (no response), fires `upload-failure`. When the tab comes
+  back from hidden, the tests allow the long-pause timer to either resume or restart, but it must
+  not fire on the instant of return.
+- **Alternatives:** a hook returning active triggers; a presentational component taking trigger
+  IDs; letting the chat flag name any trigger.
+- **Tradeoffs:** passing the engine to the component keeps reply text out of the rendering path
+  by construction. Accepting only one chat flag value means the API can't widen what the LLM can
+  trigger without a web change, which is the point of the R9 gotcha.
+- **Affects:** R9, R34
+
+## 2026-10-15: Trigger engine runtime behavior
+
+- **Decided by:** agent (implementation agent, web-trigger-engine)
+- **Decision:** the long-pause timer restarts from zero on `keydown`, `input`, `focusin` and
+  `pointerdown` (captured on `document`) and on every `visibilitychange`; it is cleared while the
+  tab is hidden. Returning to the tab restarts the full threshold rather than resuming it. A fired
+  trigger stays active until the engine is recreated (no dismissal yet), and fires only once.
+  `SupportiveContent` always renders its empty `status` region so screen readers announce content
+  added later.
+- **Alternatives:** resuming the remaining time on return to the tab; clearing `long-pause` on the
+  next activity.
+- **Tradeoffs:** restarting on return is simpler and the happy-path test needs it (resuming would
+  fire after a short tab switch late in a step). Sticky content avoids flicker and repeated
+  announcements, but a dismiss control may be wanted once the steps are built.
+- **Affects:** R9, R34
