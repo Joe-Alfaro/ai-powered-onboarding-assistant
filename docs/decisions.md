@@ -293,3 +293,44 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   fire after a short tab switch late in a step). Sticky content avoids flicker and repeated
   announcements, but a dismiss control may be wanted once the steps are built.
 - **Affects:** R9, R34
+
+## 2026-10-15: LLM client interface fixed by the llm-client specs
+
+- **Decided by:** agent (test agent, llm-client)
+- **Decision:**
+  - `Llm::Client.from_env(env)` builds the client from `LLM_PROVIDER`, `LLM_MODEL`,
+    `LLM_FALLBACK_PROVIDER` and a new optional `LLM_FALLBACK_MODEL`; an unset model uses a
+    per-provider default. `Llm::Client.new(primary:, fallback:)` takes adapters directly, which is
+    the seam the chat slice uses with `FakeLlmAdapter` (`spec/support/fake_llm_adapter.rb`).
+  - Adapters expose `#complete(payload, timeout:)` and return `Llm::Response` (`data`, `provider`,
+    `model`). `Llm::Adapters::Anthropic.new(api_key:, model:, base_url:)` and
+    `Llm::Adapters::OpenAiCompatible.new(provider:, base_url:, api_key:, model:)`, where `base_url`
+    is the API root (`.../openai/v1`, `.../v1beta/openai`, `OLLAMA_BASE_URL + "/v1"`).
+  - Provider names are `anthropic`, `groq`, `gemini`, `ollama`, keyed by `CLAUDE_API_KEY`,
+    `GROQ_API_KEY`, `GEMINI_API_KEY`; Ollama needs no key. A missing or blank key, or an unknown
+    or unset provider, raises `Llm::ConfigError` naming the variable. `Llm::Providers.configured`
+    lists providers with credentials, so the eval harness can skip the rest.
+  - Typed errors subclass `Llm::Error`, each with a `code` (`llm_timeout`, `llm_server_error`,
+    `llm_rate_limited`, `llm_unreachable`) and `actions` = `try_again`, `continue_manually`, for the
+    error envelope. Malformed output is `Llm::InvalidResponseError`.
+  - The fallback is tried once on a timeout, 5xx or 429 only, not on other 4xx, connection
+    failures are not required to fall back, and malformed output never falls back (the chat layer
+    owns its one validation retry). The primary and fallback together must fail within 10 s, so
+    the fallback cannot simply get a second full 6 s.
+  - `Llm::PayloadBuilder.new(identity:).build(system:, turns:, assessment_draft:, response_schema:)`
+    returns an `Llm::Payload` that other code can't construct. Identity values become `[NAME]`
+    (full name and each name part as whole words), `[DATE_OF_BIRTH]` (ISO, US numeric, and written
+    month formats) and `[ADDRESS]` (full address and street line), case-insensitively, in every
+    turn and the draft. Draft keys the response schema doesn't declare under `assessment_fields`
+    are dropped. Non-text, binary, invalid UTF-8 or `data:image/` content raises
+    `Llm::PayloadBuilder::DisallowedContent`.
+  - `docs/data-to-llm.md` lists the fields sent in a `## Fields sent` table, one backticked field
+    ID per row. The contract spec seeds distinctive values and compares what it finds in the real
+    request body to that list; with the design above the list is `message_text` and
+    `assessment_draft`.
+- **Alternatives:** a fixed 6 s per attempt (12 s worst case, over R16's 10 s); no fallback model
+  variable (the primary's model name would be wrong for another provider); one contract field
+  per assessment key (the assessment schema belongs to the chat slice).
+- **Tradeoffs:** two R16 specs wait on the real clock (about 6 s and 9 s) so the 10 s bound is
+  measured, not assumed. Name-part redaction can over-redact a word that happens to equal a name.
+- **Affects:** R16, R20, R21
