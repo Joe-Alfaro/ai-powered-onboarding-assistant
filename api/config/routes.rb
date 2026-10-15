@@ -16,6 +16,11 @@ Rails.application.routes.draw do
     resources :slots, only: %i[create destroy]
   end
 
+  # One chat message in, the assistant's reply out (R1, R2, R3).
+  namespace :chat do
+    resources :messages, only: :create
+  end
+
   # Defines the root path route ("/")
   # root "posts#index"
 

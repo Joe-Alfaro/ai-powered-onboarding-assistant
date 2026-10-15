@@ -582,3 +582,44 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   `continue_manually`); the orchestrator chose the web's as the wire contract, so the mapping
   lives in one place at the API boundary.
 - **Affects:** R1, R2, R3, R9, R13, R16, R36
+
+## 2026-10-15: Chat implementation choices
+
+- **Decided by:** agent (implementation agent, chat)
+- **Decision:**
+  - **Draft storage:** the incomplete assessment lives in `conversations.assessment_draft`
+    (encrypted JSON), one conversation per user. `assessments` holds one row per user, upserted
+    when the draft completes or a later message changes a field. `assessment` is returned only on
+    the message that saved it.
+  - **Encryption:** `conversations.assessment_draft`, `messages.content` and `assessments.data` use
+    Active Record encryption. Keys come from the `ACTIVE_RECORD_ENCRYPTION_*` variables; the test
+    environment sets fixed test-only keys. `messages.intent` stays plain, since it is one of five
+    labels and holds no personal data.
+  - **Validation:** our own checks, not the provider's structured output, are the gate. Fields the
+    schema doesn't define are dropped; `null` and `""` count as not provided, because providers with
+    strict schemas tend to send every property. `minLength` is left out of the schema sent to the
+    LLM, since not every provider accepts it. The retry's system prompt names what was wrong
+    (intent, reply or a field path), never the rejected values.
+  - **Input:** messages are cut to 4,000 characters and stripped of control characters before they
+    are stored or sent. Content `Llm::PayloadBuilder` still refuses (an inline image) gets the
+    out-of-scope fallback with no LLM call.
+  - **Replies:** `request-reschedule` and `out-of-scope` never use the LLM's text. The reply guard
+    swaps any other LLM reply that mentions a day name, today, tomorrow, a clock time, a calendar
+    date or a booking claim for the handler's template. It errs towards swapping, so a harmless
+    "how are you feeling today?" also becomes the template.
+  - **Persistence:** each answered message saves the user and assistant turns as a pair, the
+    fallback included, and the last 10 are sent with the next call. Nothing is saved on a consent
+    withdrawal, an empty message or an LLM failure.
+  - **503 message:** the LLM failure envelope uses one fixed user-facing message, not the
+    `Llm::Error`'s own text, with the error's `code` and the mapped actions.
+  - **Seams:** `Consent::Ledger.withdrawn?` returns false until the consent slice fills it in.
+    `Scheduling::Booker` comes from the scheduling slice. `Llm::PayloadBuilder` gets an empty
+    identity until an onboarding record with the user's confirmed name, date of birth and
+    address exists, so chat redaction of those values starts when that slice wires it in.
+- **Alternatives:** a `status` column on `assessments` for drafts (breaks "every row validates");
+  one assessment row per completion; rejecting extra fields with a retry; a narrower reply guard.
+- **Tradeoffs:** upserting keeps one current assessment per user, matching "saved to the user's
+  onboarding record". A conservative guard costs an occasional generic reply but never lets an
+  unbacked time through (R3). Until the onboarding slice lands, chat sends identity values the
+  user types into a message as typed.
+- **Affects:** R1, R2, R3, R9, R13, R16, R18, R20
