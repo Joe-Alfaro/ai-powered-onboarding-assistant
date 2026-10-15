@@ -24,6 +24,18 @@ isn't a real state, and a ZIP code starting with `000`, which isn't assigned.
 | `hard_reason` | string or null | Why the case is hard. Required when `hard` is `true` |
 | `expected` | object | `full_name`, `date_of_birth` (`YYYY-MM-DD`) and `address` |
 
+### Latest OCR results
+
+Tesseract 5.5.3 (leptonica 1.87.0) with libvips 8.18.7, on an Apple M2 running macOS 26.6:
+
+| Field | All documents (30) | Hard cases (6) |
+| --- | --- | --- |
+| full_name | 96.7% | 83.3% |
+| date_of_birth | 100.0% | 100.0% |
+| address | 100.0% | 100.0% |
+
+The one miss is case 027 (strong glare): Tesseract reads `LENA N` as `LENAN`.
+
 ## Scoring OCR
 
 ```sh
@@ -100,3 +112,4 @@ Nothing else is normalized. Digits must match exactly, so `128 Fake St` doesn't 
 | address | 123 Fake St, Springfield, ZZ 00000 | 128 Fake St, Springfield, ZZ 00000 | no |
 | address | 123 Fake St, Springfield, ZZ 00000 | 123 Fake St, Springfield, ZZ OOOOO | no |
 | address | 123 Fake St, Springfield, ZZ 00000 | 123 Fake St | no |
+

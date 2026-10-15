@@ -1,0 +1,281 @@
+#!/usr/bin/env ruby
+# Generates the synthetic OCR golden set (R26): 30 made-up ID card images and labels.json.
+# Every name, date and address is invented; addresses use the fictional state ZZ and a ZIP
+# starting with 000. The generator is seeded, so labels.json is the same on every run.
+#
+# Usage: eval/generate_golden_set --out eval/golden
+require "bundler/setup"
+require "date"
+require "fileutils"
+require "json"
+require "optparse"
+require "vips"
+
+module GoldenSet
+  SEED = 20_261_015
+
+  FIRST_NAMES = %w[Jane John Alex Maria Sam Priya Diego Lena Omar Grace Theo Nina Victor Rosa Hugo Ivy].freeze
+  LAST_NAMES = %w[
+    Sample Testcase Placeholder Mockridge Fakeley Exampleton Dummond Specimen Fictor Notreal
+    Pretendo Madeup Lorem Ipsumson Synthetica Templeton
+  ].freeze
+  STREETS = %w[Fake Example Placeholder Mock Sample Testing Dummy Fiction Specimen Lorem].freeze
+  STREET_TYPES = { "St" => "STREET", "Ave" => "AVENUE", "Rd" => "ROAD", "Blvd" => "BOULEVARD",
+                   "Dr" => "DRIVE", "Ln" => "LANE", "Ct" => "COURT", "Pl" => "PLACE" }.freeze
+  DIRECTIONS = { "N" => "NORTH", "S" => "SOUTH", "E" => "EAST", "W" => "WEST" }.freeze
+  CITIES = %w[Testville Mocktown Sampleton Fakeburg Exampleford Placeholder Dummyport Specimen].freeze
+  FONTS = [ "Helvetica", "Arial", "Verdana" ].freeze
+  HEADER_COLORS = [ [ 30, 70, 140 ], [ 120, 30, 40 ], [ 20, 100, 70 ], [ 90, 60, 130 ] ].freeze
+
+  # 30 documents: the category of each, and the hard near-miss cases with their reasons.
+  CATEGORIES = ([ "clean" ] * 9 + [ "phone_photo" ] * 8 + [ "skew" ] * 7 + [ "glare" ] * 6).freeze
+  HARD_CASES = {
+    3 => [ :dates_crowded, "Issue and expiry dates in the same format sit right above the date of birth" ],
+    8 => [ :punctuated_name, "Hyphenated name with an apostrophe, where dropping either one is a miss" ],
+    13 => [ :dim_photo, "Dim, blurred phone photo with heavy sensor noise" ],
+    16 => [ :long_address, "Long address with a direction, a spelled-out street type and an apartment number" ],
+    22 => [ :steep_skew, "Skewed 5 degrees with noise, close to where line detection breaks" ],
+    27 => [ :glare_on_address, "Strong glare over the address lines" ]
+  }.freeze
+
+  CARD_WIDTH = 1012
+  CARD_HEIGHT = 638
+
+  module_function
+
+  def generate(out)
+    FileUtils.mkdir_p(out)
+    random = Random.new(SEED)
+    labels = CATEGORIES.each_with_index.map do |category, index|
+      number = index + 1
+      hard, hard_reason = HARD_CASES[number]
+      document = build_document(random, hard)
+      image_name = format("%03d_%s.%s", number, category, category == "clean" ? "png" : "jpg")
+      effects = effect_parameters(random, category, hard)
+      render(document, effects, File.join(out, image_name))
+
+      {
+        id: format("%03d", number), image: image_name, category: category, hard: !hard.nil?,
+        hard_reason: hard_reason, expected: document[:expected]
+      }
+    end
+    File.write(File.join(out, "labels.json"), JSON.pretty_generate(labels) + "\n")
+  end
+
+  # The values a card shows and the labels the scorer expects. Every random draw happens here or
+  # in effect_parameters, in a fixed order, so labels.json depends only on SEED.
+  def build_document(random, hard)
+    first = FIRST_NAMES.sample(random: random)
+    middle = ("A".."Z").to_a.sample(random: random)
+    last = LAST_NAMES.sample(random: random)
+    name = hard == :punctuated_name ? "Mary-Ann #{middle} O'Testcase" : "#{first} #{middle} #{last}"
+
+    birth = Date.new(1950, 1, 1) + random.rand((Date.new(2005, 12, 31) - Date.new(1950, 1, 1)).to_i)
+    issued = Date.new(2019, 1, 1) + random.rand(1800)
+    expires = issued.next_year(8)
+
+    number = random.rand(1..9999)
+    direction = random.rand < 0.3 || hard == :long_address ? DIRECTIONS.keys.sample(random: random) : nil
+    street = STREETS.sample(random: random)
+    type = STREET_TYPES.keys.sample(random: random)
+    apartment = random.rand < 0.25 || hard == :long_address ? random.rand(1..40) : nil
+    city = CITIES.sample(random: random)
+    zip = format("000%02d", random.rand(100))
+    spell_out = random.rand < 0.3 || hard == :long_address
+
+    street_line = [ number, direction, street, type, (apartment && "Apt #{apartment}") ].compact.join(" ")
+    printed_street = [
+      number, direction && (spell_out ? DIRECTIONS[direction] : direction), street,
+      spell_out ? STREET_TYPES[type] : type, apartment && "#{spell_out ? 'APARTMENT' : 'APT'} #{apartment}"
+    ].compact.join(" ")
+
+    {
+      name: name, birth: birth, issued: issued, expires: expires,
+      street: printed_street.upcase, city_line: "#{city}, ZZ #{zip}".upcase,
+      layout: {
+        font: FONTS.sample(random: random),
+        header: HEADER_COLORS.sample(random: random),
+        name_label: [ "NAME", "FULL NAME" ].sample(random: random),
+        dob_label: [ "DOB", "DATE OF BIRTH" ].sample(random: random),
+        address_label: [ "ADDRESS", "ADDR" ].sample(random: random),
+        date_format: [ "%m/%d/%Y", "%m/%d/%Y", "%d %b %Y", "%m-%d-%Y" ].sample(random: random),
+        id_number: format("Z%07d", random.rand(10_000_000)),
+        dates_first: hard == :dates_crowded
+      },
+      expected: {
+        full_name: name, date_of_birth: birth.iso8601, address: "#{street_line}, #{city}, ZZ #{zip}"
+      }
+    }
+  end
+
+  def effect_parameters(random, category, hard)
+    effects = { category: category, seed: random.rand(1_000_000) }
+    case category
+    when "phone_photo"
+      effects.merge(
+        corners: Array.new(8) { random.rand(-25..25) }, scale: random.rand(0.95..1.15),
+        light: random.rand(0.75..0.95), blur: hard == :dim_photo ? 1.5 : random.rand(0.6..1.1),
+        noise: hard == :dim_photo ? 14 : random.rand(4..9), dim: hard == :dim_photo ? 0.65 : 1.0,
+        quality: random.rand(60..70)
+      )
+    when "skew"
+      angle = hard == :steep_skew ? 5.0 : random.rand(1.0..4.0)
+      effects.merge(angle: random.rand < 0.5 ? angle : -angle, noise: hard == :steep_skew ? 10 : random.rand(2..6), quality: 70)
+    when "glare"
+      on_address = hard == :glare_on_address
+      effects.merge(
+        glare_x: on_address ? 0.6 : random.rand(0.2..0.9), glare_y: on_address ? 0.42 : random.rand(0.2..0.7),
+        glare_strength: on_address ? 0.85 : random.rand(0.55..0.75), glare_size: random.rand(0.18..0.28),
+        blur: 0.6, noise: 4, quality: 70
+      )
+    else
+      effects.merge(noise: 0)
+    end
+  end
+
+  def render(document, effects, path)
+    image = card(document)
+    image =
+      case effects[:category]
+      when "phone_photo" then phone_photo(image, effects)
+      when "skew" then skewed(image, effects)
+      when "glare" then glare(image, effects)
+      else image
+      end
+    image = add_noise(image, effects[:noise], effects[:seed]) if effects[:noise].positive?
+    if path.end_with?(".png")
+      image.colourspace(:b_w).pngsave(path, compression: 9, palette: true, Q: 90, strip: true)
+    else
+      image.jpegsave(path, Q: effects[:quality], strip: true, optimize_coding: true)
+    end
+  end
+
+  # A white card with a colored header, a photo placeholder and the field block.
+  def card(document)
+    layout = document[:layout]
+    card = Vips::Image.black(CARD_WIDTH, CARD_HEIGHT, bands: 3).new_from_image([ 248, 248, 244 ])
+    card = card.draw_rect(layout[:header], 0, 0, CARD_WIDTH, 96, fill: true)
+    card = card.draw_rect([ 205, 205, 210 ], 40, 150, 230, 290, fill: true)
+    card = card.draw_circle([ 175, 175, 182 ], 155, 260, 60, fill: true)
+    card = card.draw_rect([ 175, 175, 182 ], 75, 340, 160, 100, fill: true)
+
+    card = paste_text(card, "<b>SAMPLE IDENTIFICATION CARD</b>", "#{layout[:font]} 11", [ 255, 255, 255 ], 40, 24)
+    card = paste_text(card, "SPECIMEN NOT A REAL DOCUMENT", "#{layout[:font]} 7", [ 170, 30, 30 ], 40, 110)
+    paste_text(card, field_markup(document), "#{layout[:font]} 7", [ 15, 15, 20 ], 310, 150)
+  end
+
+  def field_markup(document)
+    layout = document[:layout]
+    dates = [ "<b>ISS</b> #{document[:issued].strftime('%m/%d/%Y')}", "<b>EXP</b> #{document[:expires].strftime('%m/%d/%Y')}" ]
+    birth = document[:birth].strftime(layout[:date_format]).upcase
+    lines = [
+      "<b>#{layout[:name_label]}</b> #{escape(document[:name].upcase)}",
+      "<b>#{layout[:dob_label]}</b> #{birth}",
+      "<b>#{layout[:address_label]}</b> #{document[:street]}",
+      document[:city_line],
+      "<b>ID NO</b> #{layout[:id_number]}"
+    ]
+    layout[:dates_first] ? lines.insert(1, *dates) : lines.push(*dates)
+    lines.join("\n")
+  end
+
+  # Renders markup in one color onto the card, wrapping lines at the card's right margin.
+  def paste_text(card, markup, font, color, left, top)
+    mask = Vips::Image.text(markup, font: font, dpi: 300, spacing: 6, width: CARD_WIDTH - left - 24)
+    ink = mask.new_from_image(color).copy(interpretation: :srgb)
+    region = card.crop(left, top, mask.width, mask.height)
+    blended = (region * (mask * -1 + 255) + ink * mask) / 255
+    card.insert(blended.cast(:uchar), left, top)
+  end
+
+  def escape(text)
+    text.gsub("&", "&amp;").gsub("<", "&lt;").gsub(">", "&gt;")
+  end
+
+  # The card on a dark table, photographed at an angle in uneven light.
+  def phone_photo(card, effects)
+    margin = 70
+    width = CARD_WIDTH + margin * 2
+    height = CARD_HEIGHT + margin * 2
+    table = Vips::Image.gaussnoise(width, height, sigma: 18, mean: 70, seed: effects[:seed])
+    table = table.bandjoin([ table, table ]).linear([ 1.0, 0.85, 0.7 ], [ 0, 0, 0 ]).cast(:uchar)
+    scene = table.insert(card, margin, margin)
+
+    source = [ [ margin, margin ], [ margin + CARD_WIDTH, margin ], [ margin + CARD_WIDTH, margin + CARD_HEIGHT ], [ margin, margin + CARD_HEIGHT ] ]
+    target = source.each_with_index.map { |(x, y), i| [ x + effects[:corners][i * 2], y + effects[:corners][i * 2 + 1] ] }
+    scene = warp(scene, homography(target, source))
+
+    light = Vips::Image.xyz(width, height)[0].linear(1.0 / width, 0)
+    light = (light * (1 - effects[:light]) + effects[:light]) * effects[:dim]
+    scene = (scene * light).cast(:uchar).gaussblur(effects[:blur])
+    scene.resize(effects[:scale] * 1100.0 / width)
+  end
+
+  def skewed(card, effects)
+    bordered = card.embed(40, 40, card.width + 80, card.height + 80, extend: :background, background: [ 255, 255, 255 ])
+    bordered.rotate(effects[:angle], background: [ 255, 255, 255 ])
+  end
+
+  # A soft bright spot that washes out the card where it falls.
+  def glare(card, effects)
+    xy = Vips::Image.xyz(card.width, card.height)
+    dx = (xy[0] - effects[:glare_x] * card.width) / (effects[:glare_size] * card.width * 1.6)
+    dy = (xy[1] - effects[:glare_y] * card.height) / (effects[:glare_size] * card.height)
+    spot = ((dx * dx + dy * dy) * -1).exp * effects[:glare_strength]
+    washed = card + (card * -1 + 255) * spot
+    washed.cast(:uchar).gaussblur(effects[:blur])
+  end
+
+  def add_noise(image, sigma, seed)
+    noise = Vips::Image.gaussnoise(image.width, image.height, sigma: sigma, mean: 0, seed: seed)
+    (image + noise).cast(:uchar)
+  end
+
+  # Maps every output pixel back to the scene through a 3x3 homography (output -> source).
+  def warp(image, matrix)
+    a, b, c, d, e, f, g, h = matrix
+    xy = Vips::Image.xyz(image.width, image.height)
+    x = xy[0]
+    y = xy[1]
+    denominator = x * g + y * h + 1
+    source_x = (x * a + y * b + c) / denominator
+    source_y = (x * d + y * e + f) / denominator
+    image.mapim(source_x.bandjoin(source_y), interpolate: Vips::Interpolate.new(:bilinear), background: [ 60, 50, 40 ])
+  end
+
+  # Solves for the homography that maps each `from` point to its `to` point.
+  def homography(from, to)
+    rows = from.zip(to).flat_map do |(x, y), (u, v)|
+      [ [ x, y, 1, 0, 0, 0, -u * x, -u * y, u ], [ 0, 0, 0, x, y, 1, -v * x, -v * y, v ] ]
+    end
+    solve(rows.map { |row| row.map(&:to_f) })
+  end
+
+  # Gaussian elimination with partial pivoting on an augmented 8x9 matrix.
+  def solve(matrix)
+    size = matrix.size
+    size.times do |column|
+      pivot = (column...size).max_by { |row| matrix[row][column].abs }
+      matrix[column], matrix[pivot] = matrix[pivot], matrix[column]
+      (column + 1...size).each do |row|
+        factor = matrix[row][column] / matrix[column][column]
+        matrix[row] = matrix[row].each_with_index.map { |value, i| value - factor * matrix[column][i] }
+      end
+    end
+    solution = Array.new(size, 0.0)
+    (size - 1).downto(0) do |row|
+      sum = (row + 1...size).sum { |i| matrix[row][i] * solution[i] }
+      solution[row] = (matrix[row][size] - sum) / matrix[row][row]
+    end
+    solution
+  end
+end
+
+out = nil
+OptionParser.new do |options|
+  options.banner = "Usage: eval/generate_golden_set --out DIR"
+  options.on("--out DIR", "Directory to write the images and labels.json to") { |dir| out = dir }
+end.parse!
+abort "eval/generate_golden_set: --out DIR is required" if out.nil?
+
+GoldenSet.generate(out)

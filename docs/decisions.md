@@ -721,3 +721,31 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   stricter than an average and may push the implementation toward the PaddleOCR fallback on the
   hard cases.
 - **Affects:** R4, R10, R11, R26, R27
+
+## 2026-10-15: OCR preprocessing and Tesseract settings, no PaddleOCR fallback
+
+- **Decided by:** agent (implementation agent, ocr-pipeline)
+- **Decision:**
+  - `Ocr::Extractor` uses ruby-vips in-process. It resizes to a 1600 px working width, then
+    stretches contrast locally: the local paper level (a blur) becomes white and the local ink
+    level (a minimum filter) becomes black, both estimated at an eighth of the size. A paper-to-ink
+    difference under 60 isn't stretched further, so plain paper noise stays quiet. Then it deskews
+    by the row-profile search (whole degrees up to ±6, then quarter degrees) and runs
+    `tesseract --psm 11` (sparse text) with TSV output for word confidences. Tesseract's own
+    global threshold, applied after the stretch, takes the place of a separate adaptive threshold
+    step.
+  - The golden set reaches 96.7% name, 100% date of birth and 100% address with Tesseract 5.5.3,
+    so the PaddleOCR sidecar fallback isn't built.
+  - `Ocr::FieldMapper` compares labels with OCR's common digit-for-letter confusions folded back
+    (`1D NO` is the `ID NO` label), and it skips up to two low-confidence tokens in front of a
+    label (borders and photo edges read as stray characters). Values are never changed this way.
+  - The golden set generator is a Ruby script using ruby-vips. Clean scans are grayscale PNGs and
+    the other categories are JPEGs, 75 to 160 KB each and 2.4 MB in total.
+- **Alternatives:** dividing by the background only (washed-out text under glare stayed
+  unreadable); the default `--psm 3` (merges a middle initial into the first name more often);
+  shelling out to the vips CLI (a process and a temporary file per step); PaddleOCR.
+- **Tradeoffs:** the stretch sharpens photo-placeholder edges into junk tokens, which the mapper
+  has to skip. A fixed working width assumes the card fills most of the photo, so a small card in
+  a large photo reads worse. Preprocessing plus Tesseract takes about 0.5 s per image on an
+  Apple M2, but Railway's CPU is unmeasured (R23).
+- **Affects:** R4, R10, R11, R23, R26

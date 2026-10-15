@@ -1,0 +1,362 @@
+[
+  {
+    "id": "001",
+    "image": "001_clean.png",
+    "category": "clean",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Nina Y Templeton",
+      "date_of_birth": "1987-07-03",
+      "address": "67 N Testing Rd, Exampleford, ZZ 00034"
+    }
+  },
+  {
+    "id": "002",
+    "image": "002_clean.png",
+    "category": "clean",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Sam O Pretendo",
+      "date_of_birth": "1966-09-21",
+      "address": "9536 Fiction Rd, Specimen, ZZ 00022"
+    }
+  },
+  {
+    "id": "003",
+    "image": "003_clean.png",
+    "category": "clean",
+    "hard": true,
+    "hard_reason": "Issue and expiry dates in the same format sit right above the date of birth",
+    "expected": {
+      "full_name": "Victor L Notreal",
+      "date_of_birth": "1951-07-31",
+      "address": "2678 Specimen Ave, Exampleford, ZZ 00023"
+    }
+  },
+  {
+    "id": "004",
+    "image": "004_clean.png",
+    "category": "clean",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Hugo X Specimen",
+      "date_of_birth": "1995-02-27",
+      "address": "3879 S Testing Ave, Dummyport, ZZ 00054"
+    }
+  },
+  {
+    "id": "005",
+    "image": "005_clean.png",
+    "category": "clean",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Omar M Pretendo",
+      "date_of_birth": "1984-06-01",
+      "address": "4396 S Testing Ln, Exampleford, ZZ 00029"
+    }
+  },
+  {
+    "id": "006",
+    "image": "006_clean.png",
+    "category": "clean",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "John P Testcase",
+      "date_of_birth": "1985-07-04",
+      "address": "9919 Fiction Ct, Dummyport, ZZ 00041"
+    }
+  },
+  {
+    "id": "007",
+    "image": "007_clean.png",
+    "category": "clean",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Maria R Madeup",
+      "date_of_birth": "1962-02-03",
+      "address": "4238 Mock Rd, Mocktown, ZZ 00008"
+    }
+  },
+  {
+    "id": "008",
+    "image": "008_clean.png",
+    "category": "clean",
+    "hard": true,
+    "hard_reason": "Hyphenated name with an apostrophe, where dropping either one is a miss",
+    "expected": {
+      "full_name": "Mary-Ann J O'Testcase",
+      "date_of_birth": "1954-11-07",
+      "address": "3393 Dummy Ave, Placeholder, ZZ 00044"
+    }
+  },
+  {
+    "id": "009",
+    "image": "009_clean.png",
+    "category": "clean",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Jane J Lorem",
+      "date_of_birth": "1969-11-12",
+      "address": "8691 Testing Ct, Specimen, ZZ 00095"
+    }
+  },
+  {
+    "id": "010",
+    "image": "010_phone_photo.jpg",
+    "category": "phone_photo",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Theo X Madeup",
+      "date_of_birth": "1977-01-23",
+      "address": "4439 E Example Rd Apt 5, Placeholder, ZZ 00004"
+    }
+  },
+  {
+    "id": "011",
+    "image": "011_phone_photo.jpg",
+    "category": "phone_photo",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Nina F Ipsumson",
+      "date_of_birth": "1998-02-16",
+      "address": "8008 W Specimen Rd, Fakeburg, ZZ 00056"
+    }
+  },
+  {
+    "id": "012",
+    "image": "012_phone_photo.jpg",
+    "category": "phone_photo",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Victor U Specimen",
+      "date_of_birth": "1978-02-15",
+      "address": "8971 Sample Pl, Testville, ZZ 00090"
+    }
+  },
+  {
+    "id": "013",
+    "image": "013_phone_photo.jpg",
+    "category": "phone_photo",
+    "hard": true,
+    "hard_reason": "Dim, blurred phone photo with heavy sensor noise",
+    "expected": {
+      "full_name": "Jane W Lorem",
+      "date_of_birth": "1967-03-27",
+      "address": "4695 Sample Ct Apt 35, Fakeburg, ZZ 00011"
+    }
+  },
+  {
+    "id": "014",
+    "image": "014_phone_photo.jpg",
+    "category": "phone_photo",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Alex Y Templeton",
+      "date_of_birth": "1990-02-02",
+      "address": "4127 Specimen St, Testville, ZZ 00081"
+    }
+  },
+  {
+    "id": "015",
+    "image": "015_phone_photo.jpg",
+    "category": "phone_photo",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Hugo A Ipsumson",
+      "date_of_birth": "1971-08-29",
+      "address": "4261 Mock Rd, Mocktown, ZZ 00067"
+    }
+  },
+  {
+    "id": "016",
+    "image": "016_phone_photo.jpg",
+    "category": "phone_photo",
+    "hard": true,
+    "hard_reason": "Long address with a direction, a spelled-out street type and an apartment number",
+    "expected": {
+      "full_name": "Priya L Notreal",
+      "date_of_birth": "1988-10-17",
+      "address": "9236 E Mock Rd Apt 6, Sampleton, ZZ 00029"
+    }
+  },
+  {
+    "id": "017",
+    "image": "017_phone_photo.jpg",
+    "category": "phone_photo",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Diego X Madeup",
+      "date_of_birth": "1969-10-27",
+      "address": "9670 Dummy Dr, Specimen, ZZ 00083"
+    }
+  },
+  {
+    "id": "018",
+    "image": "018_skew.jpg",
+    "category": "skew",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Ivy M Fakeley",
+      "date_of_birth": "1996-04-01",
+      "address": "4958 Specimen Dr, Dummyport, ZZ 00068"
+    }
+  },
+  {
+    "id": "019",
+    "image": "019_skew.jpg",
+    "category": "skew",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Rosa H Notreal",
+      "date_of_birth": "1966-01-04",
+      "address": "1664 Testing Ct, Dummyport, ZZ 00005"
+    }
+  },
+  {
+    "id": "020",
+    "image": "020_skew.jpg",
+    "category": "skew",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Omar R Fictor",
+      "date_of_birth": "1975-08-12",
+      "address": "6019 Specimen Ln, Testville, ZZ 00059"
+    }
+  },
+  {
+    "id": "021",
+    "image": "021_skew.jpg",
+    "category": "skew",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Alex M Madeup",
+      "date_of_birth": "1967-12-25",
+      "address": "4578 Sample Ln, Placeholder, ZZ 00093"
+    }
+  },
+  {
+    "id": "022",
+    "image": "022_skew.jpg",
+    "category": "skew",
+    "hard": true,
+    "hard_reason": "Skewed 5 degrees with noise, close to where line detection breaks",
+    "expected": {
+      "full_name": "Lena S Fictor",
+      "date_of_birth": "1970-08-05",
+      "address": "3627 Testing Ct Apt 10, Fakeburg, ZZ 00023"
+    }
+  },
+  {
+    "id": "023",
+    "image": "023_skew.jpg",
+    "category": "skew",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Maria S Dummond",
+      "date_of_birth": "2003-04-20",
+      "address": "9729 E Mock Ct, Testville, ZZ 00035"
+    }
+  },
+  {
+    "id": "024",
+    "image": "024_skew.jpg",
+    "category": "skew",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Sam P Lorem",
+      "date_of_birth": "1992-05-30",
+      "address": "2487 Fiction Ave, Testville, ZZ 00017"
+    }
+  },
+  {
+    "id": "025",
+    "image": "025_glare.jpg",
+    "category": "glare",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Hugo B Specimen",
+      "date_of_birth": "1999-12-09",
+      "address": "3231 Sample Ave, Placeholder, ZZ 00060"
+    }
+  },
+  {
+    "id": "026",
+    "image": "026_glare.jpg",
+    "category": "glare",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Maria Q Ipsumson",
+      "date_of_birth": "1986-08-29",
+      "address": "3568 W Testing Ave, Sampleton, ZZ 00065"
+    }
+  },
+  {
+    "id": "027",
+    "image": "027_glare.jpg",
+    "category": "glare",
+    "hard": true,
+    "hard_reason": "Strong glare over the address lines",
+    "expected": {
+      "full_name": "Lena N Pretendo",
+      "date_of_birth": "2004-04-05",
+      "address": "7494 N Mock Dr, Dummyport, ZZ 00048"
+    }
+  },
+  {
+    "id": "028",
+    "image": "028_glare.jpg",
+    "category": "glare",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Omar P Templeton",
+      "date_of_birth": "1985-03-05",
+      "address": "5268 Testing Ave, Mocktown, ZZ 00032"
+    }
+  },
+  {
+    "id": "029",
+    "image": "029_glare.jpg",
+    "category": "glare",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Maria T Specimen",
+      "date_of_birth": "1993-10-27",
+      "address": "2444 Sample Dr Apt 20, Mocktown, ZZ 00052"
+    }
+  },
+  {
+    "id": "030",
+    "image": "030_glare.jpg",
+    "category": "glare",
+    "hard": false,
+    "hard_reason": null,
+    "expected": {
+      "full_name": "Grace J Lorem",
+      "date_of_birth": "1980-02-19",
+      "address": "8886 Fake Pl, Specimen, ZZ 00080"
+    }
+  }
+]
