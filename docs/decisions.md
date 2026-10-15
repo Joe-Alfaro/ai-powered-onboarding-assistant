@@ -239,3 +239,18 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Alternatives:** a GitHub Actions cron on the GitHub mirror; an external free uptime monitor.
 - **Tradeoffs:** deferred until deployment work starts.
 - **Affects:** R25
+
+## 2026-10-15: GitLab is the only remote
+
+- **Decided by:** user
+- **Replaces:** "Self-hosted GitLab with a GitHub mirror".
+- **Decision:** the self-hosted GitLab is the repository's only remote, named `origin`. There is no
+  GitHub project or mirror. Merge requests, CI and the public repository deliverable are all on
+  GitLab. The R25 uptime check uses an external free uptime monitor (still to be chosen), and
+  Railway deploys use the Railway CLI.
+- **Alternatives:** keep a GitHub mirror, which would allow a GitHub Actions cron for uptime and
+  Railway's native GitHub integration for deploys.
+- **Tradeoffs:** one remote to keep in sync and nothing on GitHub to maintain. Deploys need the
+  Railway CLI instead of a push-to-deploy integration, and the uptime check needs an outside
+  service.
+- **Affects:** R25, Deliverables
