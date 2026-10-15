@@ -453,3 +453,38 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Tradeoffs:** one small vocabulary keeps the web shell's action handling exhaustive. Slices
   that emit their own actions (for example `Llm::Error`) need to match it.
 - **Affects:** R16, R30
+
+## 2026-10-15: Scheduling contracts set by the tests
+
+- **Decided by:** agent (test agent, scheduling)
+- **Decision:** the scheduling specs fix these interfaces for the implementation and for the chat
+  slice's `request-reschedule` handler:
+  - **Tables:** `slots` (`starts_at`, `ends_at` as timestamptz) and `bookings` (`slot_id`,
+    `user_id`, `status` of `"active"` or `"cancelled"`), with partial unique indexes on
+    `slot_id` and on `user_id` where `status = 'active'`. A user holds at most one active
+    booking; cancelled rows stay as history.
+  - **Service:** `Scheduling::Booker.new(user_id:)` with `#book(slot_id:)`,
+    `#reschedule(booking_id:, slot_id:)` and `#cancel(booking_id:)`. Each returns a result, never
+    raises for a conflict, with `success?`, `outcome`, `booking`, `slot` (the slot now held or
+    requested), `previous_slot` (the slot freed) and `to_h`, which gives plain data with
+    ISO-8601 UTC strings for reply templates. Outcomes: `:booked`, `:rescheduled`, `:cancelled`,
+    `:slot_taken`, `:booking_exists`, `:not_found`. Another user's booking, or one already
+    cancelled, is `:not_found`. A unique-index violation maps to `:slot_taken`.
+  - **Endpoints:** `GET /slots` (open, future, soonest first), `GET /bookings` (the caller's
+    active bookings), `POST /bookings`, `GET|PATCH|DELETE /bookings/:id` (`PATCH` reschedules,
+    `DELETE` cancels and returns the booking with status `cancelled`), and admin-only
+    `POST /admin/slots` and `DELETE /admin/slots/:id`. Bookings render as
+    `{ id, status, slot: { id, starts_at, ends_at } }`.
+  - **Errors:** `slot_taken` 409 with a message saying the slot is already booked;
+    `booking_exists` 409; `not_found` 404 for unknown slots and other users' bookings.
+  - **Times:** every time the API returns is ISO-8601 UTC with a `Z` suffix, whatever the server
+    time zone is. The web converts to local time with a zone label.
+  - **R24 timing:** the request log line from the foundation (method, path, status, duration)
+    is the booking timing record, including for rejected bookings. No separate timing event.
+- **Alternatives:** raising exceptions from `Booker` for conflicts; reschedule as cancel plus a
+  new booking; a dedicated timing log event; slot management under `/slots`.
+- **Tradeoffs:** a result object lets the chat handler template every outcome, failures
+  included, from real data (R3). The specs accept reschedule either in place or as a new row,
+  since they check only the response and which slots hold active bookings. The parallel specs
+  run without transactional fixtures and widen the connection pool to 25 for their duration.
+- **Affects:** R6, R7, R8, R19, R24, R36, R37
