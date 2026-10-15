@@ -557,21 +557,28 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
     the LLM output carries a `trigger` key.
   - **Consent seam:** `Consent::Ledger.withdrawn?(user_id)` is asked before every LLM call,
     including the validation retry. True raises `Chat::ConsentWithdrawn`, which the API maps to
-    403 `consent_withdrawn`, with no LLM call and nothing saved.
+    403 `consent_withdrawn`, with no LLM call and nothing saved. Confirmed by the orchestrator:
+    R12's consent gates the document upload, not chat.
   - **Endpoint:** `POST /chat/messages` with `{ message, booking_id?, slot_id? }` returns
     `{ reply, intent, trigger, actions, assessment, scheduling }`. A missing message is treated as
     empty (200 with a reply, not 400). LLM failures return 503 with the `Llm::Error`'s `code`,
-    a message and `actions: ["try_again", "continue_manually"]`, the merged `Llm::Error::ACTIONS`.
+    a message and `actions: ["retry", "manual_entry"]`. The fallback reply after two malformed
+    answers carries `manual_entry` in its `actions` too. `retry` and `manual_entry` are the
+    envelope's wire vocabulary, which the web reads (its ErrorNotice tests use them); the
+    service-level result keeps `Llm::Error`'s internal names (`try_again`, `continue_manually`)
+    and the chat API maps them at the HTTP boundary.
   - **Eval sets:** `api/eval/chat/intents.yml` (at least 5 labeled utterances per intent),
     `conversations.yml` (scripted turns with the fake LLM's output and the expected record) and
     `adversarial.yml`. The specs and the eval harness (R27) share them.
 - **Alternatives:** gating chat on `Consent::Ledger.active?` as ARCHITECTURE says; requiring the
   LLM to supply `distress` and `notes`; putting the slot time in the reschedule reply text;
-  `retry` and `manual_entry` action names.
+  sending `Llm::Error`'s `try_again` and `continue_manually` on the wire.
 - **Tradeoffs:** the onboarding flow has chat before consent, so `active?` would block every new
   user's first message; `withdrawn?` still stops all LLM calls after revocation (R13), and the
   consent slice must provide it. Defaults for `distress` and `notes` let real providers that omit
   them still complete an assessment. Keeping times out of reply text keeps the guard simple and
-  local-time display in one place. The action names follow the merged LLM client rather than
-  introducing a second set.
+  local-time display in one place. Three action vocabularies existed (web: `retry` and
+  `manual_entry`; foundation: `retry`; `Llm::Error::ACTIONS`: `try_again` and
+  `continue_manually`); the orchestrator chose the web's as the wire contract, so the mapping
+  lives in one place at the API boundary.
 - **Affects:** R1, R2, R3, R9, R13, R16, R36

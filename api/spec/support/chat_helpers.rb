@@ -15,7 +15,9 @@ module ChatHelpers
   }.freeze
   REQUIRED_ASSESSMENT_FIELDS = %w[reason urgency preferred_window distress notes].freeze
   HIGH_STRESS_TRIGGER = "high-stress-intent".freeze
-  LLM_ERROR_ACTIONS = %w[try_again continue_manually].freeze
+  # The HTTP envelope's action names, which the web reads. Llm::Error uses its own internal names
+  # (try_again, continue_manually); the chat API maps them at the boundary.
+  WIRE_ERROR_ACTIONS = %w[retry manual_entry].freeze
 
   EVAL_DIR = Rails.root.join("eval/chat")
   SCHEMA_PATH = Rails.root.join("app/schemas/assessment.json")

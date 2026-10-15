@@ -93,6 +93,17 @@ RSpec.describe "POST /chat/messages", type: :request do
       end
     end
 
+    it "R2, R3: a fallback after malformed LLM output offers manual_entry, the web's action name" do
+      allow(Llm::Client).to receive(:from_env)
+        .and_return(Llm::Client.new(primary: FakeLlmAdapter.new.always_respond_with({ "reply" => "🤔" })))
+
+      post_message("😀🙏🔥💯🫠")
+
+      expect(response).to have_http_status(:ok)
+      expect(body["actions"]).to include("manual_entry")
+      expect(body["actions"]).not_to include("continue_manually")
+    end
+
     it "R3: a request with no message at all still gets a reply" do
       post "/chat/messages", params: {}, headers: headers, as: :json
 
@@ -111,7 +122,7 @@ RSpec.describe "POST /chat/messages", type: :request do
     expect(llm.call_count).to eq(0)
   end
 
-  describe "R16: LLM failure returns the error envelope with try again and continue manually" do
+  describe "R16: LLM failure returns the error envelope with retry and manual_entry actions" do
     {
       "a timeout" => Llm::TimeoutError,
       "a 5xx" => Llm::ServerError,
@@ -126,7 +137,7 @@ RSpec.describe "POST /chat/messages", type: :request do
 
         expect(response).to have_http_status(:service_unavailable)
         expect(body.fetch("error")).to include("code" => error_class.new.code,
-          "message" => a_string_matching(/\S/), "actions" => ChatHelpers::LLM_ERROR_ACTIONS)
+          "message" => a_string_matching(/\S/), "actions" => ChatHelpers::WIRE_ERROR_ACTIONS)
         expect(failing.call_count).to eq(1)
       end
     end
@@ -139,7 +150,7 @@ RSpec.describe "POST /chat/messages", type: :request do
 
       expect(seconds).to be < 10
       expect(response).to have_http_status(:service_unavailable)
-      expect(body.dig("error", "actions")).to eq(ChatHelpers::LLM_ERROR_ACTIONS)
+      expect(body.dig("error", "actions")).to eq(ChatHelpers::WIRE_ERROR_ACTIONS)
     end
 
     it "R16: makes no commitment in the error envelope" do
