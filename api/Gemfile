@@ -19,6 +19,9 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 gem "solid_cache"
 gem "solid_queue"
 
+# Validates LLM output and assessment records against app/schemas/*.json (R2)
+gem "json_schemer", "~> 2.4"
+
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 

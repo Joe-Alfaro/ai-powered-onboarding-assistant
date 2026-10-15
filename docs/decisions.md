@@ -518,3 +518,60 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Tradeoffs:** removing a slot drops its cancelled-booking history, which is acceptable for
   admin-managed availability and keeps the foreign key strict.
 - **Affects:** R6, R7, R8, R19, R24, R36, R37
+
+## 2026-10-15: Chat contracts set by the tests
+
+- **Decided by:** agent (test agent, chat)
+- **Decision:** the chat specs fix these interfaces for the implementation and for the slices
+  built in parallel:
+  - **Orchestrator:** `Chat::Orchestrator.new(user_id:, llm_client:).handle(message:, booking_id: nil,
+    slot_id: nil)` returns a result with `reply`, `intent`, `trigger`, `actions`, `assessment` and
+    `scheduling`. Each message gets a new orchestrator (as each request does), so the assessment
+    draft lives in the database between messages. Each intent goes to its handler,
+    `Chat::Handlers::ProvideDetails`, `AskQuestion`, `RequestReschedule`, `ExpressDistress` or
+    `OutOfScope`, instantiated once per message. The LLM's `response_schema` lists the five
+    intents and exactly the assessment schema's properties under `assessment_fields`.
+  - **Assessment schema:** `api/app/schemas/assessment.json`, a valid JSON Schema (validated with
+    the `json_schemer` gem) requiring `reason` and `preferred_window` (non-empty strings),
+    `urgency` (`low`, `medium` or `high`), `distress` (boolean) and `notes` (string, may be
+    empty), with no other properties. The record is complete, saved to `assessments` (with a
+    `schema_version`) and returned as `assessment` once reason, urgency and preferred window are
+    known; `distress` defaults to false and `notes` to an empty string. The express-distress
+    handler sets `distress` true itself. Every `assessments` row validates against the schema, so
+    an incomplete draft must live elsewhere. `assessment` is nil on every other message.
+  - **Validation:** LLM output with an intent outside the list, a missing or non-string `reply`,
+    missing or non-object `assessment_fields`, or a field value the schema rejects, and an
+    `Llm::InvalidResponseError`, are retried once. A second failure gives the out-of-scope reply
+    with a `continue_manually` action. Nothing from an invalid answer reaches the draft or the
+    database. Timeouts, 5xx, 429 and connection failures are not retried by the chat layer.
+  - **Fallbacks:** the out-of-scope reply is fixed text pointing back to onboarding, whatever the
+    LLM wrote. Empty or whitespace-only messages get a reply without an LLM call. Messages are
+    capped below 10,000 characters before they reach the LLM.
+  - **Reply guard:** a reply stating a day, date, clock time or booking claim that no handler
+    result backs is replaced by the handler's template. `request-reschedule` calls
+    `Scheduling::Booker.new(user_id:).reschedule(booking_id:, slot_id:)` only when the request
+    names both; its reply comes from the result's `success?`, `outcome` and `to_h`, and `to_h` is
+    returned as `scheduling`. The reply text states the outcome; the web shows the time from
+    `scheduling` in the user's local zone (R37), since the API doesn't know it.
+  - **Trigger:** `trigger` is `"high-stress-intent"` for express-distress and nil otherwise, even if
+    the LLM output carries a `trigger` key.
+  - **Consent seam:** `Consent::Ledger.withdrawn?(user_id)` is asked before every LLM call,
+    including the validation retry. True raises `Chat::ConsentWithdrawn`, which the API maps to
+    403 `consent_withdrawn`, with no LLM call and nothing saved.
+  - **Endpoint:** `POST /chat/messages` with `{ message, booking_id?, slot_id? }` returns
+    `{ reply, intent, trigger, actions, assessment, scheduling }`. A missing message is treated as
+    empty (200 with a reply, not 400). LLM failures return 503 with the `Llm::Error`'s `code`,
+    a message and `actions: ["try_again", "continue_manually"]`, the merged `Llm::Error::ACTIONS`.
+  - **Eval sets:** `api/eval/chat/intents.yml` (at least 5 labeled utterances per intent),
+    `conversations.yml` (scripted turns with the fake LLM's output and the expected record) and
+    `adversarial.yml`. The specs and the eval harness (R27) share them.
+- **Alternatives:** gating chat on `Consent::Ledger.active?` as ARCHITECTURE says; requiring the
+  LLM to supply `distress` and `notes`; putting the slot time in the reschedule reply text;
+  `retry` and `manual_entry` action names.
+- **Tradeoffs:** the onboarding flow has chat before consent, so `active?` would block every new
+  user's first message; `withdrawn?` still stops all LLM calls after revocation (R13), and the
+  consent slice must provide it. Defaults for `distress` and `notes` let real providers that omit
+  them still complete an assessment. Keeping times out of reply text keeps the guard simple and
+  local-time display in one place. The action names follow the merged LLM client rather than
+  introducing a second set.
+- **Affects:** R1, R2, R3, R9, R13, R16, R36
