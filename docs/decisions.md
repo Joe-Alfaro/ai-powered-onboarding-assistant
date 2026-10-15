@@ -1068,3 +1068,56 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   announced by most but not all screen reader and browser pairs; the deferred Playwright and
   axe checks on the deployed page (R34) should confirm it.
 - **Affects:** R6, R7, R8, R34, R36
+
+## 2026-10-15: Web identity contracts set by the tests
+
+- **Decided by:** agent (test agent, web-identity)
+- **Decision:** the web-identity tests fix this contract for the implementer.
+  - **Components** take an `api: ApiClient` (built with `createApiClient`) and callbacks, so the
+    tests reach the API only through fetch. `web/src/identity/IdentityStep.tsx` exports
+    `IdentityStep({ api, engine, onUploaded(document), onManualEntry })`: the consent form first,
+    and the upload form only after `POST /consents` succeeds. `ConfirmIdentityForm({ api,
+    documentId, onConfirmed, onManualEntry })` and `ManualIdentityForm({ api, onSaved })` are in
+    the same folder; `web/src/privacy/PrivacyControls.tsx` exports `PrivacyControls({ api,
+    onDeleted? })`.
+  - **Consent (R12):** a region named for consent with "What we collect" and "Why" headings, the
+    photo retention, and a visible "Consent text version: <v>" line. The web app owns the text
+    and its version and sends exactly the shown `<v>` as `text_version`. The "I agree" checkbox
+    starts unticked; "Continue" without it sends nothing. There is no consent lookup endpoint, so
+    the identity step always asks again; each grant is a new ledger row, which R12 allows.
+  - **Upload (R9, R14):** a native, labeled `input type="file"` ("Photo of your ID") whose
+    accessible description names the size limit, `NEXT_PUBLIC_MAX_UPLOAD_MB` or 10 MB by default
+    (matching the API's `MAX_UPLOAD_MB`). A file over the limit is refused in the browser with an
+    alert naming the limit and isn't sent. The server stays the authority: a 413, 415 or 422
+    envelope shows its message in an alert. Every failure (envelope, 5xx, network, the client-side
+    size refusal, and a 200 with `manual_entry: true`) calls `engine.reportUpload({ ok: false })`.
+    A 5xx or network failure shows `ErrorNotice` with "Try again", which resends the same file; the
+    form stays, so no 500 page. A 403 `consent_required` returns to the consent form, unticked.
+  - **Manual entry (R10):** a "Skip and enter details manually" button is on the consent, upload
+    and confirm forms at all times. `manual_entry: true` shows an alert mentioning manual entry
+    and doesn't go to confirm.
+  - **Confirm (R5, R11):** the draft comes from `GET /documents/:id`; nothing is posted until the
+    user presses the confirm button, then `POST /documents/:id/confirm` gets the form's current
+    values. Each field's accessible description is visible text: "needs confirmation" plus "high
+    confidence" or "low confidence" for a read field, and "could not read" for a null one, which
+    stays empty. A 404 draft shows its message with the skip button.
+  - **R13 seam:** no endpoint exists yet, so these tests set it: `DELETE /consents` withdraws
+    consent and `DELETE /account` requests deletion, each 204. Each control opens a
+    `role="alertdialog"` that explains what is deleted and that it can't be undone, takes focus,
+    closes on Escape or "Cancel" (focus back to its button) and sends only on "Yes, ...". The
+    result goes in a `status` region ("withdrawn", "deleted"). The privacy page signs the user out
+    of Supabase after a deletion, not after a withdrawal.
+  - **Pages:** `/identity` pushes `/confirm?document=<id>` after an upload and `/identity/manual`
+    on skip, and renders `SupportiveContent` for its own engine. `/confirm` reads the ID with
+    `useSearchParams()` and, with none, offers only manual entry. `/confirm` and
+    `/identity/manual` push `/schedule` when saved. `/privacy` sits in the `(onboarding)` group,
+    outside the step list. Pages build their client from `NEXT_PUBLIC_API_URL` and
+    `getAccessToken`.
+- **Alternatives:** firing `upload-failure` only for rejected files and not for unreadable ones;
+  an upload page that checks consent on load (no endpoint for it); `DELETE /me` or a
+  `POST /privacy/requests` job for R13; native `<dialog>` (jsdom lacks `showModal`).
+- **Tradeoffs:** asking for consent on every visit adds rows but never uploads without a fresh
+  grant. Treating an unreadable photo as a failed upload shows the "try another photo or type it
+  in" content exactly when it helps. The R13 paths must be matched by the API slice that builds
+  `Privacy::Purger`; the orchestrator should route this entry to it.
+- **Affects:** R5, R9, R10, R11, R12, R13, R14, R34
