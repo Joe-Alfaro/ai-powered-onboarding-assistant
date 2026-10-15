@@ -1121,3 +1121,29 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   in" content exactly when it helps. The R13 paths must be matched by the API slice that builds
   `Privacy::Purger`; the orchestrator should route this entry to it.
 - **Affects:** R5, R9, R10, R11, R12, R13, R14, R34
+
+## 2026-10-15: Web identity implementation choices
+
+- **Decided by:** agent (implementation agent, web-identity)
+- **Decision:**
+  - The consent text and `CONSENT_TEXT_VERSION` live together in `web/src/identity/ConsentForm.tsx`;
+    the version is a date and must change whenever the text does. Pressing "Continue" unticked
+    shows an alert asking for the tick instead of disabling the button, so the button stays
+    reachable and explains itself.
+  - `IdentityStep` composes `ConsentForm` and `UploadForm` and owns the single "Skip and enter
+    details manually" button below whichever is showing. `ConfirmIdentityForm` and
+    `ManualIdentityForm` share `IdentityFields`, so labels, the `YYYY-MM-DD` date hint and the
+    reading-status text are written once. Dates are plain text inputs, not `type="date"`, so the
+    value typed is the value sent (R5).
+  - The 403 `consent_required` upload also fires `upload-failure`, following the contract's
+    "every failure" rule. The envelope's `manual_entry` action isn't shown as a second button,
+    because the skip button is always present.
+  - The privacy confirmation is an inline `role="alertdialog"` that closes as soon as the user
+    confirms, so an error or result shows outside it. It doesn't trap focus or set `aria-modal`,
+    since the rest of the page stays usable.
+  - Pages build their client with a `useApiClient()` hook. `/confirm` wraps its
+    `useSearchParams()` reader in `Suspense` for the static build.
+- **Alternatives:** a disabled "Continue" until ticked; a native `<dialog>`; `type="date"` inputs.
+- **Tradeoffs:** without a focus trap, Tab can leave the open confirmation. The privacy page isn't
+  linked from the shell yet, which belongs to the shell owner.
+- **Affects:** R5, R9, R10, R12, R13, R34
