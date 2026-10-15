@@ -981,3 +981,21 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   page for timeouts keeps R16's "try again and continue manually within 10 s" true even when the
   API itself hangs past the client's 8 s timeout.
 - **Affects:** R2, R3, R9, R13, R16, R30, R34
+
+## 2026-10-15: Chat page keeps the conversation in memory and never locks the form
+
+- **Decided by:** agent (implementation agent, web-chat)
+- **Decision:**
+  - The conversation lives in page state only. No endpoint returns past messages, so reloading the
+    chat step starts an empty log; the saved assessment is still on the API.
+  - `Send` is never disabled. A second send while one is in flight is ignored instead, because
+    disabling the focused button would drop keyboard focus (R34).
+  - The client's `timeout` and `network_error` get `manual_entry` added in `withManualEntry`
+    (`web/src/chat/chatApi.ts`), on the chat step only; the shared API client stays as it is.
+  - The "Enter details manually" button for a reply with `manual_entry` follows the latest reply
+    and is hidden while an error notice shows its own.
+- **Alternatives:** fetching history on mount (no such endpoint); disabling the form while sending;
+  adding `manual_entry` to every client-side error in the API client.
+- **Tradeoffs:** a reload loses the visible transcript. Changing the client would have offered
+  manual entry on steps where it means nothing.
+- **Affects:** R2, R16, R30, R34
