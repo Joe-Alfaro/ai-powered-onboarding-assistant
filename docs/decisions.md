@@ -623,3 +623,65 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   unbacked time through (R3). Until the onboarding slice lands, chat sends identity values the
   user types into a message as typed.
 - **Affects:** R1, R2, R3, R9, R13, R16, R18, R20
+
+## 2026-10-15: Web shell contract set by the shell tests
+
+- **Decided by:** agent (test agent, web-shell)
+- **Decision:** the web-shell tests fix this contract for the implementer and for the page slices.
+  - `web/src/api/client.ts` exports `createApiClient({ baseUrl, getAccessToken, timeoutMs? })`
+    with `request<T>(path, { method?, body? })`, `ApiError` (built from
+    `{ status, code, message, actions }`) and `DEFAULT_TIMEOUT_MS`, which must be over 6 s (so the
+    API's own 503 after its 6 s LLM timeout can arrive) and under 10 s (R30). The client asks for
+    a fresh token on every request, sends it as `Authorization: Bearer`, and sends no user ID.
+    With no token it rejects with code `unauthenticated` without calling fetch. Plain-object
+    bodies go as JSON; `FormData` goes untouched. Client-made codes are `network_error` and
+    `timeout` (status `null`) and `unavailable` (a 5xx with no envelope), each with `['retry']`
+    and a friendly message instead of the raw one.
+  - **Envelope actions are snake_case strings:** `retry` and `manual_entry`. The client drops
+    any other action. The API's `rescue_from` layer must use these exact values.
+  - `web/src/api/ErrorNotice.tsx` renders the message in an `alert` with "Try again" and "Enter
+    details manually" buttons for the listed actions.
+  - `web/src/auth/supabase.ts` exports `getSupabaseClient()` (one memoized client, reading the
+    `NEXT_PUBLIC_SUPABASE_*` variables when first created, not at import) and `getAccessToken()`
+    (`null` when signed out or on error). `web/src/auth/SignInForm.tsx` signs in with email and
+    password and calls `onSignedIn`. Neither reads tables or storage.
+  - `web/src/time/formatLocalDateTime.ts` exports `formatLocalDateTime(iso, { locale?,
+    timeZone? })`, which defaults to the browser's zone, shows the date, the time and a short
+    zone label, and throws `RangeError` on a string without `Z` or an offset.
+  - `web/src/shell/steps.ts` (`STEPS`, `stepFromPath`) and `web/src/shell/AppShell.tsx`
+    (`<AppShell currentStep>`): a skip link first, a banner, an `Onboarding steps` nav with an
+    ordered list, `aria-current="step"` plus visible "current" text, earlier steps as links
+    marked "completed", later steps not linked, and one `main`. The `(onboarding)` route group
+    layout derives the step from `usePathname()`.
+  - `web/src/app/error.tsx` uses the Next 16 `retry` prop and never shows the error message;
+    `web/src/app/not-found.tsx` links back to `/`.
+  - Jest runs with `TZ=America/New_York` (set in `jest.config.mjs`), because Jest gives each test
+    file a copy of `process.env` and a test can't change the zone itself.
+- **Alternatives:** returning a result union instead of throwing `ApiError`; kebab-case action
+  names to match intent IDs; changing the zone per test; letting users jump to any step.
+- **Tradeoffs:** throwing keeps the success path of every page simple. Snake_case matches what a
+  Rails JSON response naturally emits. A fixed suite-wide zone makes the default-zone test real
+  but tests other zones only through the `timeZone` option. Keeping later steps unlinked stops
+  users skipping consent or confirmation from the nav.
+- **Affects:** R16, R19, R30, R34, R37
+
+## 2026-10-15: Web shell implementation choices
+
+- **Decided by:** agent (implementation agent, web-shell)
+- **Decision:**
+  - `DEFAULT_TIMEOUT_MS` is 8 s: 2 s of headroom over the API's 6 s LLM timeout for its 503
+    envelope to arrive, and 2 s under the 10 s budget for the retry to show (R30).
+  - A 4xx with no envelope becomes code `request_failed` with no actions; a missing token becomes
+    `unauthenticated` with status 401 and no actions, so the page sends the user to sign in rather
+    than retrying.
+  - `ErrorNotice` shows an action's button only when the page passes the matching handler, so a
+    page can't show a button that does nothing.
+  - `formatLocalDateTime` shows weekday, date, year, time and the short zone name, using
+    `Intl.DateTimeFormat` with no date library.
+  - `SignInForm` is built and tested but not yet placed on a page: the home page test renders it
+    outside the App Router, where `useRouter` throws. The page slice that owns sign-in mounts it
+    and routes to `/chat` in `onSignedIn`.
+- **Alternatives:** a timeout of exactly 6 s or 9.5 s; always showing the buttons; date-fns-tz.
+- **Tradeoffs:** 8 s leaves margin on both sides at the cost of a slightly later timeout message.
+  Deferring the sign-in page keeps this slice inside its tests.
+- **Affects:** R16, R19, R30, R37

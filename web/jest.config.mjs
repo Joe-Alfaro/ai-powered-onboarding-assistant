@@ -2,6 +2,11 @@ import nextJest from 'next/jest.js'
 
 const createJestConfig = nextJest({ dir: './' })
 
+// Run every test as a browser outside UTC (R37). Jest gives each test file a
+// copy of process.env, so a test can't change the zone itself; setting it
+// here, before the workers start, is what reaches Date and Intl.
+process.env.TZ = 'America/New_York'
+
 /** @type {import('jest').Config} */
 const config = {
   testEnvironment: 'jsdom',
