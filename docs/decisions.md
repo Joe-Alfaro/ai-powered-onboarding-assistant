@@ -369,3 +369,45 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   picks them; `LLM_MODEL` overrides them with no code change. Auto tool choice on the 5.5 models
   can produce more invalid responses than forced tool use; the eval will show how many.
 - **Affects:** R16, R20, R21, R28
+
+## 2026-10-15: API foundation contracts set by the tests
+
+- **Decided by:** agent (test agent, api-foundation)
+- **Decision:** the api-foundation specs fix these interfaces for the implementation and for the
+  slices built in parallel:
+  - **Auth:** `Auth::JwtVerifier.new(jwks_url:, issuer:)` with `#verify(token)` returning an
+    identity with `user_id` (the `sub` claim) and `admin?`. It accepts ES256 and RS256 keys from
+    the JWKS, requires `exp`, `sub`, issuer `<SUPABASE_URL>/auth/v1` and audience `authenticated`,
+    and caches the JWKS in memory. Failures raise `Auth::JwtVerifier::InvalidToken` (401) or
+    `Auth::JwtVerifier::JwksUnavailable` (503 `auth_unavailable`).
+  - **Admin role:** only `app_metadata.role == "admin"` counts. `user_metadata` and the top-level
+    `role` claim are ignored, because users can edit `user_metadata` themselves.
+  - **Controllers:** every `ApplicationController` subclass requires a bearer token by default and
+    exposes `current_user_id`; admin endpoints use `before_action :require_admin!`, which writes
+    one `AuditEvent` per admin access. Public endpoints such as `/health` opt out explicitly.
+  - **Audit actor_ref:** hex HMAC-SHA256 of the user ID keyed by `AUDIT_HMAC_KEY`.
+  - **Error codes:** `unauthorized` 401, `forbidden` 403, `not_found` 404 (including unknown
+    routes), `invalid_request` 400 (missing params), `validation_failed` 422,
+    `database_unavailable` 503 (any `ActiveRecord::ConnectionNotEstablished`), `internal_error`
+    500 with a generic message. Other slices raise `ApiError.new(status:, code:, message:,
+    actions:)` to get their own envelope, for example `llm_unavailable` with
+    `actions: ["retry", "manual"]`.
+  - **Health:** `Health::Check.new(probes:).call` returns
+    `{ status: "ok" | "degraded" | "down", checks: { app:, database:, storage:, ocr:, llm: } }`,
+    each check `{ status: "ok" | "down" }`. A probe is any callable; `false` or an exception
+    means down. `/health` returns 503 only when the database is down. `Health::Check.probes` is
+    the app's registry: the database probe runs on every ping; storage, OCR and LLM are wrapped
+    in `Health::CachedProbe.new(probe, ttl:)` with a ttl of at most 5 minutes. The OCR, LLM and
+    storage slices register their real probes there.
+  - **Logs:** every log line, including errors, goes through `Rails.logger` as one JSON object.
+    Error entries name the exception class but never include its message.
+  - **RLS:** enabled on every table in the `public` schema, Rails' own `schema_migrations` and
+    `ar_internal_metadata` included, with no policy for `anon`, `authenticated` or `public`.
+- **Alternatives:** admin role in a custom claim or a database table; plain SHA-256 for
+  `actor_ref`; flat health statuses; exempting Rails' internal tables from RLS.
+- **Tradeoffs:** a keyed HMAC can't be reversed by hashing guessed user IDs. Nested health checks
+  leave room for latency or detail fields later. RLS on the internal tables keeps a leaked anon
+  key from even reading the migration history, and keeps the spec a single catalog query that
+  covers future tables. Because `schema.rb` doesn't record RLS, the implementation needs a way to
+  get it into the test database (for example a SQL schema format).
+- **Affects:** R15, R19, R30, R31

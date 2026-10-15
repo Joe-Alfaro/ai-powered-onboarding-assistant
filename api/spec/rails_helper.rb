@@ -1,6 +1,11 @@
 # This file is copied to spec/ when you run 'rails generate rspec:install'
 require 'spec_helper'
 ENV['RAILS_ENV'] ||= 'test'
+# Fixed, fake Supabase and audit settings so specs never depend on a developer's environment.
+# Set before the app loads in case it reads them at boot.
+ENV["SUPABASE_URL"] = "https://project.supabase.test"
+ENV["SUPABASE_JWKS_URL"] = "https://project.supabase.test/auth/v1/.well-known/jwks.json"
+ENV["AUDIT_HMAC_KEY"] = "spec-audit-hmac-key"
 require_relative '../config/environment'
 # Prevent database truncation if the environment is production
 abort("The Rails environment is running in production mode!") if Rails.env.production?
@@ -67,6 +72,8 @@ RSpec.configure do |config|
 
   # Filter lines from Rails gems in backtraces.
   config.filter_rails_from_backtrace!
+
+  config.include ActiveSupport::Testing::TimeHelpers
   # arbitrary gems may also be filtered via:
   # config.filter_gems_from_backtrace("gem name")
 end
