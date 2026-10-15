@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Regenerates the OCR spec fixtures with the vips CLI. Every value on them is made up.
+# Usage: spec/fixtures/files/ocr/make_fixtures
+set -euo pipefail
+
+dir="$(cd "$(dirname "$0")" && pwd)"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+# Renders black text on a white card with a margin.
+card() {
+  local text="$1" out="$2"
+  vips text "$tmp/ink.v" "$text" --font "Helvetica 14" --dpi 300
+  vips invert "$tmp/ink.v" "$tmp/text.v"
+  local width height
+  width=$(( $(vipsheader -f width "$tmp/text.v") + 160 ))
+  height=$(( $(vipsheader -f height "$tmp/text.v") + 160 ))
+  vips embed "$tmp/text.v" "$out" 80 80 "$width" "$height" --extend background --background 255
+}
+
+card "SAMPLE IDENTIFICATION CARD
+SPECIMEN NOT A REAL DOCUMENT
+NAME JANE Q SAMPLE
+DOB 03/14/1985
+ADDRESS 123 FAKE ST
+SPRINGFIELD, ZZ 00000
+ISS 01/02/2020
+EXP 01/02/2030" "$dir/clean_id.png"
+
+card "SAMPLE IDENTIFICATION CARD
+SPECIMEN NOT A REAL DOCUMENT
+NAME JANE Q SAMPLE
+DOB 03/14/1985
+ISS 01/02/2020
+EXP 01/02/2030" "$dir/partial_id.png"
+
+# A phone photo: rotated 2.5 degrees, slightly blurred, with sensor noise, saved as a JPEG.
+vips rotate "$dir/clean_id.png" "$tmp/rotated.v" 2.5 --background 255
+vips gaussblur "$tmp/rotated.v" "$tmp/blurred.v" 0.8
+vips gaussnoise "$tmp/noise.v" "$(vipsheader -f width "$tmp/blurred.v")" \
+  "$(vipsheader -f height "$tmp/blurred.v")" --sigma 12 --mean 0
+vips add "$tmp/blurred.v" "$tmp/noise.v" "$tmp/noisy.v"
+vips cast "$tmp/noisy.v" "$tmp/photo.v" uchar
+vips jpegsave "$tmp/photo.v" "$dir/photo_skewed_id.jpg" --Q 70
+
+vips black "$tmp/black.v" 1000 600
+vips invert "$tmp/black.v" "$dir/blank.png"
+
+# PNG magic bytes followed by garbage, so only a full decode can tell it's broken.
+printf '\211PNG\r\n\032\nthis is not really an image' > "$dir/corrupt.png"

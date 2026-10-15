@@ -45,6 +45,17 @@ cd "$root/api"
 db_host="${DB_HOST:-localhost}"
 db_port="${DB_PORT:-5433}"
 if nc -z -w 2 "$db_host" "$db_port" 2> /dev/null; then
+  # The OCR specs run real Tesseract (with English data) and libvips.
+  for tool in tesseract vips; do
+    if ! command -v "$tool" > /dev/null; then
+      echo "gates: $tool not found on PATH (brew install tesseract vips)" >&2
+      exit 1
+    fi
+  done
+  if ! tesseract --list-langs 2> /dev/null | grep -qx eng; then
+    echo "gates: Tesseract has no English data (brew install tesseract)" >&2
+    exit 1
+  fi
   step "rspec (with per-module coverage minimums)"
   RAILS_ENV=test bin/rails db:prepare > /dev/null
   bundle exec rspec
