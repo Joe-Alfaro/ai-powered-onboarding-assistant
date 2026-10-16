@@ -1330,3 +1330,34 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   Ollama (`llama3.2` 3B) ran on a heavily loaded host, which inflates its p95. The first eval run's Gemini entry predates the
   scoring fix and shows $0 and 466 ms where it should show unknown.
 - **Affects:** R21, R27, R28
+
+## 2026-10-16: Setup test contract for the seed, the env check and the gates
+
+- **Decided by:** agent (test agent, setup)
+- **Decision:**
+  - **Schema:** `spec/db/schema_spec.rb` migrates a scratch database (`DATABASE_URL` pointed at
+    `api_schema_check_<pid>` on the test server) in a child process, dumps it to a temp file via
+    `SCHEMA`, and requires it to equal the committed `db/schema.rb` byte for byte. It also checks
+    there are no pending migrations.
+  - **Seed:** the one command is `bin/rails db:seed`; the spec runs `Rails.application.load_seed`
+    on the empty test database. Demo users are created through the Supabase Auth admin API
+    (`POST /auth/v1/admin/users` with `email_confirm: true`), faked at the HTTP boundary by
+    `FakeSupabaseAuthAdmin`, which answers a repeat email with 422 `email_exists` as Supabase
+    does, so the seed must treat that as "already there". Credentials are fixed (the same on
+    every run), use reserved domains (`example.com/org/net` or `.test`), and are printed on every
+    run.
+  - **Golden set "registered":** there is no golden-set table, so registered means the seed
+    validates `eval/golden/labels.json` (or `GOLDEN_DIR`, as `ai:eval:ocr` uses) and prints a
+    line naming the golden set and its document count; it raises, naming the golden set, when the
+    set is missing.
+  - **Env check:** `bin/check-env [ROOT]` at the repo root. Fails on a variable read in app code
+    but not in its own app's `.env.example` (API code against `api/.env.example`, web code
+    against `web/.env.example`), and on one listed without a comment above it in the same block.
+    `api/spec`, `*.test.*`, `node_modules` and `.next` aren't scanned. Unused variables in an
+    example aren't flagged.
+  - **Gates:** a static spec reads `bin/gates` and requires uncommented lines calling
+    `bin/check-env` and `gitleaks git`.
+- **Alternatives:** a golden-set database table (not in the architecture); comparing schema.rb
+  against `db:schema:dump` of the test database (it would pass a schema.rb loaded rather than
+  migrated); flagging stale example entries (would force removing optional runtime settings).
+- **Affects:** R32, R33
