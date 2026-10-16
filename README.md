@@ -122,6 +122,10 @@ bin/check-env                        # every env var the code reads is in an .en
 
 ### End-to-end tests
 
+The end-to-end tests aren't part of `bin/gates`, the pre-push hook or the MR pipeline: they need
+the full local Supabase stack, which the shared CI runner doesn't run. Run them locally before
+merging a change that touches the flow.
+
 Playwright drives the whole flow in Chromium against the real local stack: Supabase Auth and
 Storage, the API with real Tesseract, and a production build of the web app. The LLM is a small
 fake OpenAI-compatible server (`web/e2e/support/fake-llm.mjs`) reached through the Ollama adapter,

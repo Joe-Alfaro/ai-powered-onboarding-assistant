@@ -1463,3 +1463,40 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   (slow first compiles, and its overlay replaces error pages); seeding users with the demo
   accounts (tests would share bookings and state); a separate R9 walk.
 - **Affects:** R7, R8, R9, R10, R15, R16, R30, R34, R37
+
+## 2026-10-16: Playwright runs locally, not in CI
+
+- **Decided by:** orchestrator, on the e2e test agent's recommendation; recorded by agent
+  (implementation agent, e2e)
+- **Replaces:** "Playwright runs in the same pipeline" under Quality gates in ARCHITECTURE.md.
+- **Decision:** the Playwright suite stays out of `bin/gates`, the pre-push hook and the MR
+  pipeline. It runs locally with `cd web && npm run e2e` against the local Supabase stack, before
+  merging changes that touch the flow. The README test section says so.
+- **Alternatives:** a step in the `gates` job; a separate `e2e` job that starts and stops its own
+  Supabase stack under a dedicated `project_id` and ports.
+- **Tradeoffs:** the shell runner is shared and runs one job at a time on the user's Mac. The full
+  Supabase stack (about a dozen containers on a fixed port range), a production Next build and the
+  API would make every pipeline much slower, risk port clashes with other projects, and go against
+  the GitLab server-safety rules in `CLAUDE.md`. The cost is that a broken flow can merge if
+  nobody runs the suite; the Jest and RSpec gates still cover each step on its own.
+- **Affects:** R34, and every requirement the end-to-end tests check
+
+## 2026-10-16: Moving on from the chat and schedule steps
+
+- **Decided by:** agent (implementation agent, e2e)
+- **Decision:**
+  - The chat page shows a "Continue to your ID" link under the assessment summary once the
+    assessment is saved, and the schedule page shows "Continue to the summary" once a call is
+    booked. Links, not buttons, because they only navigate. The schedule link is hidden while a
+    reschedule or cancel is open, so the user finishes that first. "Assessment complete" sits in
+    a `role="status"` region so the change is announced.
+  - Focus isn't moved to the link when it appears: the user may still be typing in the chat, and
+    the link follows the status text in tab order.
+  - On arriving at a new step, `AppShell` moves focus to the main landmark (already
+    `tabIndex={-1}` for the skip link) and puts "Step N of 5: <label>" in a visually hidden
+    `role="status"` region in the header. The first step shown after a page load isn't announced,
+    and moves within a step (such as `/identity` to `/identity/manual`) aren't either.
+- **Alternatives:** moving focus to the new link; focusing each page's `h1` (needs a ref or
+  `tabIndex` on every page); relying on Next.js's route announcer, which reads the page title,
+  and the title is the same on every step.
+- **Affects:** R34

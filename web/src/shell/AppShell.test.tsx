@@ -122,6 +122,42 @@ describe('AppShell (R34)', () => {
     })
   })
 
+  describe('arriving at a new step', () => {
+    function shellAt(currentStep: (typeof STEPS)[number]['id'] | null) {
+      return (
+        <AppShell currentStep={currentStep}>
+          <h1>Step content</h1>
+        </AppShell>
+      )
+    }
+
+    it('announces nothing and leaves focus alone on the first step shown', () => {
+      renderShell('chat')
+
+      expect(screen.getByRole('status')).toBeEmptyDOMElement()
+      expect(screen.getByRole('main')).not.toHaveFocus()
+    })
+
+    it('names the new step in a live region and moves focus to the main content', () => {
+      const { rerender } = render(shellAt('chat'))
+
+      rerender(shellAt('identity'))
+
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Step 2 of 5: Your ID',
+      )
+      expect(screen.getByRole('main')).toHaveFocus()
+    })
+
+    it('keeps focus where it is when leaving the flow', () => {
+      const { rerender } = render(shellAt('done'))
+
+      rerender(shellAt(null))
+
+      expect(screen.getByRole('main')).not.toHaveFocus()
+    })
+  })
+
   it('has no accessibility violations', async () => {
     const { container } = renderShell('identity')
 

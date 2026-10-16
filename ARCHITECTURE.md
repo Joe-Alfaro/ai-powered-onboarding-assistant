@@ -369,9 +369,10 @@ Test-first, one requirement per test/implementation pair, as in the delivery loo
 
 - GitLab merge-request pipelines (on every push to a branch with an open MR) run one `gates` job:
   RuboCop, RSpec with SimpleCov thresholds, ESLint, Prettier check, `tsc --noEmit`, Jest with
-  coverage thresholds, the env check script, and a secret scan. Playwright runs in the same
-  pipeline. There are no branch or `main` pipelines (see the GitLab server safety rules in
-  `CLAUDE.md`).
+  coverage thresholds, the env check script, and a secret scan. There are no branch or `main`
+  pipelines (see the GitLab server safety rules in `CLAUDE.md`).
+- Playwright isn't in the pipeline or `bin/gates`. It runs locally with `npm run e2e` against the
+  local Supabase stack, before merging changes that touch the flow (see the README test section).
 - A Husky pre-push hook runs the same `bin/gates` script locally.
 
 ## Deployment on Railway

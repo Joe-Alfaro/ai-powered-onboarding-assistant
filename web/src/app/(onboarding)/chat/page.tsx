@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useRef, useState, type FormEvent } from 'react'
 import { ErrorNotice } from '@/api/ErrorNotice'
@@ -18,6 +19,7 @@ import { useStepTriggerEngine } from '@/support/TriggerEngineContext'
 // The identity step's manual form needs no LLM, so the flow carries on
 // without the chat (R16).
 const MANUAL_ENTRY_PATH = '/identity/manual'
+const NEXT_STEP_PATH = '/identity'
 
 interface FailedSend {
   message: string
@@ -91,8 +93,17 @@ export default function ChatPage() {
         />
         <button type="submit">Send</button>
       </form>
-      <p>{assessment ? 'Assessment complete' : 'Assessment in progress'}</p>
-      {assessment && <AssessmentSummary assessment={assessment} />}
+      <p role="status">
+        {assessment ? 'Assessment complete' : 'Assessment in progress'}
+      </p>
+      {assessment && (
+        <>
+          <AssessmentSummary assessment={assessment} />
+          <p>
+            <Link href={NEXT_STEP_PATH}>Continue to your ID</Link>
+          </p>
+        </>
+      )}
       <Conversation turns={turns} />
       {failed && (
         <ErrorNotice
