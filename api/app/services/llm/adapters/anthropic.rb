@@ -42,6 +42,10 @@ module Llm
                    tool_choice: { type: "auto" }, output_config: { effort: "low" })
       end
 
+      def usage(body)
+        token_usage(body, "input_tokens", "output_tokens")
+      end
+
       def structured_output(body)
         block = Array(body["content"]).find { |item| item["type"] == "tool_use" && item["name"] == TOOL_NAME }
         input = block&.dig("input")

@@ -10,7 +10,9 @@
 #
 # `hang` simulates a provider that never answers: it sleeps for the timeout it was given, then
 # raises Llm::TimeoutError, so the wall-clock budget is real. For an instant timeout, use
-# `fail_with(Llm::TimeoutError)`. `always_respond_with` sets the step used once the queue is empty.
+# `fail_with(Llm::TimeoutError)`. `always_respond_with` sets the step used once the queue is empty;
+# `respond_by { |payload| data }` does the same with an answer computed from each payload. Pass
+# `usage: { input_tokens:, output_tokens: }` to any respond step to report token usage.
 class FakeLlmAdapter
   Call = Struct.new(:payload, :timeout)
 
@@ -24,13 +26,19 @@ class FakeLlmAdapter
     @calls = []
   end
 
-  def respond_with(data)
-    @script << [ :respond, data ]
+  # Callers may pass the output as bare keywords, so `usage:` is split off the rest.
+  def respond_with(data = nil, usage: nil, **output)
+    @script << [ :respond, data || output, usage ]
     self
   end
 
-  def always_respond_with(data)
-    @default_step = [ :respond, data ]
+  def always_respond_with(data = nil, usage: nil, **output)
+    @default_step = [ :respond, data || output, usage ]
+    self
+  end
+
+  def respond_by(usage: nil, &block)
+    @default_step = [ :respond_by, block, usage ]
     self
   end
 
@@ -46,15 +54,21 @@ class FakeLlmAdapter
 
   def complete(payload, timeout:)
     calls << Call.new(payload, timeout)
-    kind, value = @script.shift || @default_step || raise("FakeLlmAdapter has no scripted step left")
+    kind, value, usage = @script.shift || @default_step || raise("FakeLlmAdapter has no scripted step left")
 
     case kind
-    when :respond then Llm::Response.new(data: value.deep_stringify_keys, provider: provider, model: model)
+    when :respond then response(value, usage)
+    when :respond_by then response(value.call(payload), usage)
     when :fail then raise value
     when :hang
       sleep timeout
       raise Llm::TimeoutError
     end
+  end
+
+  # Usage is passed only when scripted, so specs that don't need it don't depend on it.
+  def response(data, usage)
+    Llm::Response.new(data: data.deep_stringify_keys, provider: provider, model: model, **({ usage: usage } if usage).to_h)
   end
 
   def call_count

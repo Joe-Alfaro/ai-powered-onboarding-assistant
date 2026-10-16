@@ -59,6 +59,22 @@ RSpec.describe Llm::Adapters::OpenAiCompatible do
     end
   end
 
+  describe "R28: token usage, for the eval's cost per conversation" do
+    it "R28: returns the prompt and completion token counts as input and output tokens" do
+      body = JSON.parse(openai_body).merge("usage" => { "prompt_tokens" => 640, "completion_tokens" => 48, "total_tokens" => 688 })
+      stub_request(:post, provider_url).to_return(status: 200, body: body.to_json,
+                                                  headers: { "Content-Type" => "application/json" })
+
+      expect(adapter.complete(payload, timeout: 6).usage).to eq(input_tokens: 640, output_tokens: 48)
+    end
+
+    it "R28: returns nil usage when the provider reports none" do
+      stub_provider_success("groq")
+
+      expect(adapter.complete(payload, timeout: 6).usage).to be_nil
+    end
+  end
+
   it "sends no Authorization header when the provider needs no key (Ollama)" do
     ollama = described_class.new(provider: "ollama", base_url: "http://localhost:11434/v1", api_key: nil, model: "llama-test")
     stub_provider_success("ollama")

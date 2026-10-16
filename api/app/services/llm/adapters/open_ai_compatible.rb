@@ -31,6 +31,10 @@ module Llm
         }
       end
 
+      def usage(body)
+        token_usage(body, "prompt_tokens", "completion_tokens")
+      end
+
       def structured_output(body)
         content = Array(body["choices"]).first&.dig("message", "content")
         raise Llm::InvalidResponseError, "#{provider} returned no message" unless content.is_a?(String)

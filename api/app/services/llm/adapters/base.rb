@@ -10,10 +10,19 @@ module Llm
       def complete(payload, timeout:)
         raise ArgumentError, "expected an Llm::Payload from Llm::PayloadBuilder" unless payload.is_a?(Payload)
 
-        Response.new(data: structured_output(post(request_body(payload), timeout)), provider: provider, model: model)
+        body = post(request_body(payload), timeout)
+        Response.new(data: structured_output(body), provider: provider, model: model, usage: usage(body))
       end
 
       private
+
+      # Token counts in the provider's own field names; nil when the provider reports none.
+      def token_usage(body, input_key, output_key)
+        input, output = body["usage"]&.values_at(input_key, output_key)
+        return unless input.is_a?(Integer) && output.is_a?(Integer)
+
+        { input_tokens: input, output_tokens: output }
+      end
 
       def post(body, timeout)
         uri = URI(endpoint)

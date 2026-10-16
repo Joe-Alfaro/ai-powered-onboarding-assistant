@@ -60,6 +60,22 @@ RSpec.describe Llm::Adapters::Anthropic do
     end
   end
 
+  describe "R28: token usage, for the eval's cost per conversation" do
+    it "R28: returns the input and output token counts the provider reports" do
+      body = JSON.parse(anthropic_body).merge("usage" => { "input_tokens" => 812, "output_tokens" => 64 })
+      stub_request(:post, provider_url).to_return(status: 200, body: body.to_json,
+                                                  headers: { "Content-Type" => "application/json" })
+
+      expect(adapter.complete(payload, timeout: 6).usage).to eq(input_tokens: 812, output_tokens: 64)
+    end
+
+    it "R28: returns nil usage when the provider reports none" do
+      stub_provider_success("anthropic")
+
+      expect(adapter.complete(payload, timeout: 6).usage).to be_nil
+    end
+  end
+
   it "R16 no unhandled error: a reply with no tool_use block raises Llm::InvalidResponseError" do
     body = { type: "message", role: "assistant", content: [ { type: "text", text: "Hello!" } ] }.to_json
     stub_request(:post, provider_url).to_return(status: 200, body: body, headers: { "Content-Type" => "application/json" })

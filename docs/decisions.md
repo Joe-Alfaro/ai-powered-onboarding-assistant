@@ -1261,3 +1261,72 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Tradeoffs:** pages that render the layout's engine depend on the context to show content;
   rendered alone they fall back to their own, so their existing tests still hold.
 - **Affects:** R8, R9, R17, R19, R30
+
+## 2026-10-15: Eval harness interface and how the chat numbers are scored
+
+- **Decided by:** agent (test agent, eval)
+- **Decision:**
+  - `rake ai:eval` is `Eval::Harness.new(env:, adapter_factory:, ocr_scorer:, results_dir:, out:)`.
+    It runs `Eval::OcrScorer` and `Eval::ChatScorer`, prints the scorecard and writes one new JSON
+    file per run to `api/eval/results/` (`RESULTS_DIR` overrides). `adapter_factory` takes
+    `provider:` and `model:`, so specs inject fake adapters and never reach a real provider.
+  - Without `PROVIDERS`, the chat sets run on `LLM_PROVIDER` and `LLM_MODEL`. With `PROVIDERS=all`
+    they run on five named candidates: `claude-haiku` (`claude-haiku-4-5`, since there is no
+    Haiku 5.5), `claude-sonnet` (`claude-sonnet-5-5`), and `groq`, `gemini` and `ollama` on their
+    `Llm::Providers` default models. A candidate whose key (or `OLLAMA_BASE_URL`) is missing is
+    reported with `status: "skipped"` and a reason naming the variable, never left out.
+  - An intent passes when at least 80% of its labeled utterances route to it
+    (`Eval::ChatScorer::INTENT_PASS_THRESHOLD`); intent coverage is the share of intents that pass.
+    The schema-valid rate is the share of scripted conversations that end with a saved assessment
+    that validates. The out-of-scope fallback rate counts out-of-scope utterances answered with the
+    `out-of-scope` intent and adversarial inputs answered without an error or a booking or time
+    claim. The "you booked me for Friday" case is reported on its own as `no_false_booking`.
+  - p95 latency is the nearest-rank 95th percentile over individual LLM calls, in milliseconds,
+    so inputs answered without a call (empty messages) don't dilute it.
+  - Cost per conversation is the mean over the scripted conversations of the token cost at the
+    per-million-token prices in the committed `api/eval/prices.yml` (keyed by model id). Token
+    counts come from a new optional `Llm::Response#usage` (`input_tokens`, `output_tokens`) that
+    both adapters fill from the provider's response. Missing usage or a missing price gives an
+    unknown (null) cost, never zero.
+  - The first 429 stops that provider's run, which is reported with `rate_limited: true`; other
+    LLM errors fail only the case they hit.
+  - Results files hold only aggregates: no eval message, LLM reply, prompt text, OCR value
+    (including misses) or key value.
+- **Alternatives:** estimating tokens from characters; timing whole chat messages; retrying after
+  a 429; requiring every utterance of an intent to route correctly.
+- **Tradeoffs:** stopping at the first 429 understates free tiers that would recover after a
+  pause, but it reports the limit honestly instead of hiding it in retries. An 80% bar tolerates
+  one miss in five utterances per intent.
+- **Affects:** R1, R2, R3, R21, R27, R28
+
+## 2026-10-16: Production LLM provider, Gemini's default model and how failed calls are scored
+
+- **Decided by:** agent (implementation agent, eval)
+- **Decision:**
+  - Production runs on Claude Haiku 4.5 (`LLM_PROVIDER=anthropic`, `claude-haiku-4-5`) with Groq
+    as `LLM_FALLBACK_PROVIDER`. On the 2026-10-16 eval, Haiku matched Sonnet 5.5 on intent
+    coverage, schema-valid rate, out-of-scope fallback and no false booking (all 100%) at less
+    than half the cost per conversation and a lower p95. Groq was fastest and cheapest but saved a
+    valid assessment in only 2 of 3 conversations. The README has the full table.
+  - `ARCHITECTURE.md` named "Claude Haiku 5.5", which doesn't exist; it now says Claude Haiku 4.5,
+    matching `Llm::Providers` and the eval candidates.
+  - The default Gemini model changes from `gemini-2.5-flash` to `gemini-3.8-flash`, replacing that
+    part of the 2026-10-15 "LLM client runtime behavior and default models" entry. Google now
+    rejects `gemini-2.5-flash` for new API users with HTTP 404 and names `gemini-3.8-flash` as its
+    replacement.
+  - The eval times only answered LLM calls for p95, and a conversation with no answered call has
+    an unknown cost. Failed calls are counted by error class in the results. A run in which every
+    call fails therefore reports "n/a" and "unknown", not a fast p95 and a $0 cost.
+  - `PROVIDERS` also takes a comma-separated list of candidate names, so one provider can be
+    rerun without calling the others again. `rake ai:eval` paces calls per provider
+    (`Eval::Harness::FREE_TIER_PACING`) to stay inside free-tier limits; specs run unpaced.
+- **Alternatives:** Sonnet 5.5 as primary (perfect routing, about twice the cost and a higher
+  p95); Groq as primary (cheapest and free, but a lower schema-valid rate); keeping the retired
+  Gemini model and reporting Gemini as failed.
+- **Tradeoffs:** Haiku is a paid provider, so production depends on a paid key while the app
+  still runs on Groq alone (R21). The eval sets are small: one case moves a rate by 4 to 33
+  points. On the free tier, Gemini 3.8 Flash answered no call in two runs 20 minutes apart:
+  timeouts at the 6 s client timeout and server errors, then a 429. So it has no usable numbers.
+  Ollama (`llama3.2` 3B) ran on a heavily loaded host, which inflates its p95. The first eval run's Gemini entry predates the
+  scoring fix and shows $0 and 466 ms where it should show unknown.
+- **Affects:** R21, R27, R28
