@@ -30,7 +30,10 @@ contain no personal data.
 | Email address, user ID and any other account data | Never passed to the payload builder; draft keys outside the assessment fields are dropped. |
 | ID document images | No code path sends image bytes to an LLM. The builder accepts plain UTF-8 text only and rejects binary data, image data URIs and image content blocks. Images go only to the self-hosted OCR engine. |
 
-Redaction covers the identity values the user has already confirmed. A value the user types
+Redaction covers the identity values the user has already confirmed. `Chat::Orchestrator` reads
+them from the user's onboarding record (whether they came from a reviewed OCR draft or were typed
+in by hand) before every LLM call, and the builder replaces them in the current message, the
+recent history and the assessment draft alike. A value the user types
 before it is known, or writes in a form the builder doesn't recognize (for example a misspelled
 name), can still reach the provider inside `message_text`.
 

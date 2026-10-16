@@ -33,6 +33,11 @@ Rails.application.routes.draw do
     resource :identity, only: :create
   end
 
+  # Withdrawing consent and deleting the account hard-delete the user's data (R13). Neither takes
+  # an ID: the user comes only from the token (R19).
+  delete "consents" => "consents#destroy"
+  resource :account, only: :destroy
+
   # Defines the root path route ("/")
   # root "posts#index"
 

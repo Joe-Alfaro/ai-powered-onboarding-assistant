@@ -4,7 +4,8 @@
 # DELETE /object/<bucket>/<key> or DELETE /object/<bucket> with `prefixes`, sign with
 # POST /object/sign/<bucket>/<key> and `expiresIn`, and look up with HEAD /object/<bucket>/<key>
 # or GET /object/info/<bucket>/<key>. Every call needs the service role key; the bucket is private,
-# so public URLs never resolve.
+# so public URLs never resolve. A signed URL (GET /object/sign/<bucket>/<key>?token=...) needs no
+# key and serves the object while it exists, so deleting the object kills every URL signed for it.
 class FakeSupabaseStorage
   StoredObject = Data.define(:body, :content_type)
   Request = Data.define(:method, :path, :body)
@@ -49,6 +50,7 @@ class FakeSupabaseStorage
     path = URI(request.uri.to_s).path.delete_prefix("/storage/v1")
     method = request.method.to_s.upcase
     requests << Request.new(method: method, path: path, body: request.body)
+    return fetch_signed(path, request) if method == "GET" && path.start_with?("/object/sign/")
     return json(400, statusCode: "403", error: "Unauthorized", message: "Invalid signature") unless authorized?(request)
 
     route(method, path, request)
@@ -83,8 +85,24 @@ class FakeSupabaseStorage
     return not_found unless object?(key)
 
     expires_in = JSON.parse(request.body.to_s)["expiresIn"]
+    token = "signed-#{SecureRandom.hex(8)}"
     signed << { key: key, expires_in: expires_in }
-    json(200, signedURL: "/object/sign/#{bucket}/#{key}?token=signed-#{SecureRandom.hex(8)}")
+    tokens[token] = key
+    json(200, signedURL: "/object/sign/#{bucket}/#{key}?token=#{token}")
+  end
+
+  def tokens
+    @tokens ||= {}
+  end
+
+  # Expiry isn't modeled: the specs that follow a signed URL care only that a deleted object
+  # can't be served through it.
+  def fetch_signed(path, request)
+    key = CGI.unescape(path.delete_prefix("/object/sign/#{bucket}/"))
+    token = URI.decode_www_form(URI(request.uri.to_s).query.to_s).to_h["token"]
+    return json(400, statusCode: "400", error: "InvalidJWT", message: "Invalid token") unless tokens[token] == key
+
+    lookup(key, "GET")
   end
 
   def delete_one(key)
