@@ -942,3 +942,60 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   the Auth delete fails after the commit the user gets 503 and must retry, which repeats the
   (now empty) purge and writes a second audit entry.
 - **Affects:** R13, R17, R19, R20
+
+## 2026-10-15: Chat page contract set by the web-chat tests
+
+- **Decided by:** agent (test agent, web-chat)
+- **Decision:** `web/src/app/(onboarding)/chat/page.test.tsx` fixes this contract for the
+  implementer.
+  - The page is the default export of `web/src/app/(onboarding)/chat/page.tsx`. It builds its
+    client with `createApiClient({ baseUrl: process.env.NEXT_PUBLIC_API_URL, getAccessToken })`
+    and posts `{ message }` (nothing else) to `/chat/messages`.
+  - A text field labelled `Message` and a `Send` button. The field is the page's first control,
+    Tab from it reaches `Send`, and after sending the field is cleared and keeps focus.
+  - The conversation is a `log` region named `Conversation` (polite by default), with each turn
+    labelled in text as `You` or `Assistant`. The user's message appears once, even after a retry.
+  - Assessment progress is a line of text in one element: "Assessment in progress" until a
+    response carries `assessment`, then "Assessment complete" plus a region named
+    `Assessment summary` showing reason, urgency, preferred window and notes. The summary stays
+    when later replies carry `assessment: null`. The API sends no partial progress, so the page
+    can't show per-field progress.
+  - The page owns a trigger engine: started on mount (long-pause wired to this step), stopped on
+    unmount, fed each 200 response through `reportChatResponse`, and shown with
+    `<SupportiveContent>`.
+  - A 200 reply is always a normal reply in the log, never an `alert`, the out-of-scope fallback
+    included. When its `actions` include `manual_entry`, the page also shows an "Enter details
+    manually" button.
+  - Errors use `ErrorNotice` ("Try again" resends the same message; "Enter details manually").
+    The chat page offers both buttons for every failure that isn't the user's doing: a 503
+    envelope and also the client's own `timeout` and `network_error`, which carry only `retry`.
+    403 `consent_withdrawn` shows its message with no retry.
+  - Continue manually goes to `/identity/manual`: the identity step's manual form, which needs no
+    LLM, so the flow carries on without the chat.
+  - The page writes no booking or time text of its own; any such statement comes from the reply.
+- **Alternatives:** an in-page manual assessment form (no API endpoint exists to save one);
+  routing to `/identity`; showing only `retry` on a client timeout, as the envelope says;
+  per-field progress inferred from replies.
+- **Tradeoffs:** skipping to the identity step means an assessment the chat didn't finish stays
+  unsaved; a manual assessment form needs an API endpoint first. Adding `manual_entry` on the
+  page for timeouts keeps R16's "try again and continue manually within 10 s" true even when the
+  API itself hangs past the client's 8 s timeout.
+- **Affects:** R2, R3, R9, R13, R16, R30, R34
+
+## 2026-10-15: Chat page keeps the conversation in memory and never locks the form
+
+- **Decided by:** agent (implementation agent, web-chat)
+- **Decision:**
+  - The conversation lives in page state only. No endpoint returns past messages, so reloading the
+    chat step starts an empty log; the saved assessment is still on the API.
+  - `Send` is never disabled. A second send while one is in flight is ignored instead, because
+    disabling the focused button would drop keyboard focus (R34).
+  - The client's `timeout` and `network_error` get `manual_entry` added in `withManualEntry`
+    (`web/src/chat/chatApi.ts`), on the chat step only; the shared API client stays as it is.
+  - The "Enter details manually" button for a reply with `manual_entry` follows the latest reply
+    and is hidden while an error notice shows its own.
+- **Alternatives:** fetching history on mount (no such endpoint); disabling the form while sending;
+  adding `manual_entry` to every client-side error in the API client.
+- **Tradeoffs:** a reload loses the visible transcript. Changing the client would have offered
+  manual entry on steps where it means nothing.
+- **Affects:** R2, R16, R30, R34
