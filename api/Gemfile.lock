@@ -94,6 +94,7 @@ GEM
       irb (~> 1.10)
       reline (>= 0.3.8)
     diff-lcs (1.6.2)
+    dotenv (3.2.0)
     drb (2.2.3)
     erb (6.0.7)
     erubi (1.13.1)
@@ -353,6 +354,7 @@ PLATFORMS
 DEPENDENCIES
   bootsnap
   debug
+  dotenv
   json_schemer (~> 2.4)
   jwt (~> 3.3)
   lograge (~> 0.15.1)

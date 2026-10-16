@@ -21,6 +21,10 @@ install_web_deps() {
   echo "$hash" > node_modules/.lockfile-hash
 }
 
+cd "$root"
+step "env check"
+bin/check-env > /dev/null
+
 cd "$root/api"
 if [ "$in_ci" = "true" ]; then
   bundle check > /dev/null || bundle install --quiet
@@ -57,7 +61,8 @@ if nc -z -w 2 "$db_host" "$db_port" 2> /dev/null; then
     exit 1
   fi
   step "rspec (with per-module coverage minimums)"
-  RAILS_ENV=test bin/rails db:prepare > /dev/null
+  # Not db:prepare: on a new database it also runs the seed, which calls Supabase Auth.
+  RAILS_ENV=test bin/rails db:create db:schema:load > /dev/null
   bundle exec rspec
 elif [ "$in_ci" = "true" ]; then
   echo "gates: no Postgres at $db_host:$db_port" >&2

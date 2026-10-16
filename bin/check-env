@@ -1,0 +1,88 @@
+#!/usr/bin/env ruby
+# Checks that every environment variable the app code in api/ and web/ reads is listed, with an
+# explanation, in that app's .env.example (R33). An entry counts as explained when a comment line
+# sits above it in the same block, with no blank line between.
+#
+# Usage: bin/check-env [ROOT]   (ROOT defaults to the repo root)
+#
+# Only direct reads are found: ENV["X"], ENV.fetch("X") and ENV.key?("X") in Ruby and ERB, and
+# process.env.X and process.env["X"] in JavaScript and TypeScript. Tests, dependencies and build
+# output aren't app code and aren't scanned.
+require "pathname"
+
+root = Pathname(ARGV[0] || File.expand_path("..", __dir__))
+
+APPS = %w[api web].freeze
+SKIPPED_DIRECTORIES = %w[.git .next coverage log node_modules spec storage tmp vendor].freeze
+TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?\z|\Ajest\.(config|setup)\./
+RUBY_FILE = /\.(rb|rake|ru|erb|ya?ml)\z|\A(Gemfile|Rakefile)\z/
+SCRIPT_FILE = /\.[cm]?[jt]sx?\z/
+# Set by Bundler and CI runners, not by whoever configures the app.
+PROVIDED_BY_TOOLCHAIN = %w[BUNDLE_GEMFILE CI].freeze
+
+NAME = /([A-Z][A-Z0-9_]*)/
+RUBY_READ = /\bENV\s*(?:\[|\.fetch\s*\(|\.key\?\s*\()\s*["']#{NAME}["']/
+SCRIPT_READ = /\bprocess\.env(?:\.#{NAME}\b|\[\s*["'`]#{NAME}["'`]\s*\])/
+COMMENT_LINE = %r{\A\s*(#|//|/?\*)}
+
+# The variables a file reads, as { name => "path:line" } for the first read of each.
+def reads(file, root)
+  pattern = file.basename.to_s.match?(RUBY_FILE) ? RUBY_READ : SCRIPT_READ
+  file.each_line.with_index(1).each_with_object({}) do |(line, number), found|
+    next if line.match?(COMMENT_LINE)
+
+    line.scan(pattern).flatten.compact.each { |name| found[name] ||= "#{file.relative_path_from(root)}:#{number}" }
+  end
+rescue ArgumentError # not UTF-8 text
+  {}
+end
+
+def code_files(directory)
+  return [] unless directory.directory?
+
+  directory.children.sort.flat_map do |child|
+    if child.directory?
+      SKIPPED_DIRECTORIES.include?(child.basename.to_s) ? [] : code_files(child)
+    else
+      name = child.basename.to_s
+      !name.match?(TEST_FILE) && name.match?(Regexp.union(RUBY_FILE, SCRIPT_FILE)) ? [ child ] : []
+    end
+  end
+end
+
+# The variables an .env.example lists, as { name => explained? }.
+def documented(example)
+  return {} unless example.file?
+
+  explained = false
+  example.each_line.each_with_object({}) do |line, entries|
+    if line.strip.empty?
+      explained = false
+    elsif line.match?(/\A\s*#/)
+      explained = true
+    elsif (name = line[/\A\s*(?:export\s+)?#{NAME}=/, 1])
+      entries[name] = explained
+    end
+  end
+end
+
+problems = APPS.flat_map do |app|
+  example = root.join(app, ".env.example")
+  entries = documented(example)
+  read = code_files(root.join(app)).reduce({}) { |all, file| reads(file, root).merge(all) }
+  read.except(*PROVIDED_BY_TOOLCHAIN).sort.filter_map do |name, location|
+    if !entries.key?(name)
+      "#{name} (read at #{location}) is not listed in #{app}/.env.example"
+    elsif !entries[name]
+      "#{name} (read at #{location}) has no comment explaining it in #{app}/.env.example"
+    end
+  end
+end
+
+if problems.empty?
+  puts "check-env: every variable the code reads is listed and explained in .env.example"
+else
+  warn "check-env: #{problems.size} environment variable problem(s):"
+  problems.each { |problem| warn "  #{problem}" }
+  exit 1
+end

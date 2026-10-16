@@ -50,3 +50,9 @@ group :test do
   gem "simplecov", require: false
   gem "webmock"
 end
+
+group :development do
+  # Loads api/.env for bin/rails server, db:seed and the eval tasks. Not in test: specs set their
+  # own environment and must never pick up real keys.
+  gem "dotenv"
+end

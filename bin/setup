@@ -1,0 +1,135 @@
+#!/bin/sh
+# One-command local setup (R32): checks the system dependencies, installs the app dependencies,
+# starts the local Supabase stack (Auth and Storage) and the API's Postgres, writes api/.env and
+# web/.env.local from the .env.example files with local values, then migrates and seeds.
+#
+# Safe to run again: existing .env files, keys and data are kept, and the seed is idempotent.
+# Usage: bin/setup
+set -eu
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$root"
+
+say() {
+  echo "==> $1"
+}
+
+fail() {
+  echo "setup: $1" >&2
+  exit 1
+}
+
+# --- System dependencies ---
+say "Checking system dependencies"
+missing=""
+for tool in ruby bundle node npm docker supabase tesseract vips; do
+  command -v "$tool" > /dev/null || missing="$missing $tool"
+done
+if [ -n "$missing" ]; then
+  fail "missing:$missing. See \"System dependencies\" in README.md."
+fi
+ruby -e 'exit(Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("3.4") ? 0 : 1)' \
+  || fail "Ruby 3.4 or newer is needed (found $(ruby -e 'print RUBY_VERSION'))."
+node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)' \
+  || fail "Node 20 or newer is needed (found $(node --version))."
+tesseract --list-langs 2> /dev/null | grep -qx eng || fail "Tesseract has no English data (eng)."
+vips -l 2> /dev/null | grep -q heifload || fail "libvips was built without HEIF support (libheif)."
+docker info > /dev/null 2>&1 || fail "Docker isn't running. Start Docker Desktop (or the Docker daemon) and retry."
+
+# --- App dependencies ---
+say "Installing dependencies"
+npm install --silent --no-audit --no-fund
+(cd api && (bundle check > /dev/null || bundle install --quiet))
+(cd web && npm ci --silent --no-audit --no-fund)
+
+# --- Local Supabase (Auth and Storage) ---
+if [ ! -s supabase/signing_keys.json ]; then
+  say "Generating a local ES256 signing key for Supabase Auth"
+  echo "[]" > supabase/signing_keys.json
+  supabase gen signing-key --algorithm ES256 --yes > /dev/null 2>&1 || fail "couldn't generate the signing key."
+fi
+say "Starting the local Supabase stack (the first run downloads its images)"
+supabase start > /dev/null 2>&1 || fail "supabase start failed. Run it by hand to see why."
+status="$(supabase status -o env 2> /dev/null)"
+supabase_value() {
+  echo "$status" | sed -n "s/^$1=\"\{0,1\}\([^\"]*\)\"\{0,1\}$/\1/p"
+}
+supabase_url="$(supabase_value API_URL)"
+anon_key="$(supabase_value ANON_KEY)"
+service_role_key="$(supabase_value SERVICE_ROLE_KEY)"
+[ -n "$supabase_url" ] && [ -n "$anon_key" ] && [ -n "$service_role_key" ] \
+  || fail "couldn't read the local Supabase URL and keys from 'supabase status'."
+
+# --- Environment files ---
+# Sets KEY=value in a file, replacing the line that assigns KEY.
+set_env() {
+  awk -v key="$2" -v value="$3" '
+    index($0, key "=") == 1 { print key "=" value; next }
+    { print }
+  ' "$1" > "$1.tmp" && mv "$1.tmp" "$1"
+}
+# Comments out the line that assigns KEY, so the variable is unset rather than empty.
+unset_env() {
+  awk -v key="$2" '
+    index($0, key "=") == 1 { print "# " $0; next }
+    { print }
+  ' "$1" > "$1.tmp" && mv "$1.tmp" "$1"
+}
+random_key() {
+  ruby -rsecurerandom -e 'print SecureRandom.hex(32)'
+}
+
+if [ ! -f api/.env ]; then
+  say "Writing api/.env for local development"
+  cp api/.env.example api/.env
+  # Unset, so the local database settings in config/database.yml apply.
+  unset_env api/.env DATABASE_URL
+  set_env api/.env SUPABASE_URL "$supabase_url"
+  set_env api/.env SUPABASE_JWKS_URL "$supabase_url/auth/v1/.well-known/jwks.json"
+  set_env api/.env SUPABASE_SERVICE_ROLE_KEY "$service_role_key"
+  for key in ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY \
+    ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT AUDIT_HMAC_KEY; do
+    set_env api/.env "$key" "$(random_key)"
+  done
+  unset_env api/.env RAILS_MASTER_KEY
+  for key in CLAUDE_API_KEY GROQ_API_KEY GEMINI_API_KEY; do
+    set_env api/.env "$key" ""
+  done
+  # Production only: development runs jobs in process, with no Solid Queue database.
+  unset_env api/.env SOLID_QUEUE_IN_PUMA
+  # An empty value isn't the same as unset (an empty PIDFILE is a path), so comment them out.
+  # Uncomment a key line once you fill it in.
+  awk '/^[A-Z][A-Z0-9_]*=$/ { print "# " $0; next } { print }' api/.env > api/.env.tmp && mv api/.env.tmp api/.env
+else
+  say "Keeping the existing api/.env"
+fi
+
+if [ ! -f web/.env.local ]; then
+  say "Writing web/.env.local for local development"
+  cp web/.env.example web/.env.local
+  set_env web/.env.local NEXT_PUBLIC_SUPABASE_URL "$supabase_url"
+  set_env web/.env.local NEXT_PUBLIC_SUPABASE_ANON_KEY "$anon_key"
+else
+  say "Keeping the existing web/.env.local"
+fi
+
+# --- API database ---
+db_port="${DB_PORT:-$(sed -n "s/^DB_PORT=//p" api/.env)}"
+say "Starting the API's Postgres on port ${db_port:-5433}"
+DB_PORT="${db_port:-5433}" docker compose up -d --wait postgres > /dev/null 2>&1 \
+  || fail "couldn't start Postgres. Is port ${db_port:-5433} free? Set DB_PORT in api/.env to use another."
+
+say "Migrating and seeding"
+cd api
+bin/rails db:create db:migrate > /dev/null
+bin/rails db:seed
+
+cat << EOF
+
+Setup finished. Next:
+  1. Put an LLM key in api/.env for chat and the eval: GROQ_API_KEY (free tier), or
+     LLM_PROVIDER=ollama with a local Ollama server.
+  2. Start the API:  cd api && bin/rails server
+  3. Start the web:  cd web && npm run dev
+  4. Open http://localhost:3000 and sign in with a demo user above.
+EOF
