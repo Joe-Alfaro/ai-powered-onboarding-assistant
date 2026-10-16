@@ -20,6 +20,7 @@ Bundler.require(*Rails.groups)
 
 require_relative "../lib/boot/json_log_formatter"
 require_relative "../lib/boot/upload_body_limit"
+require_relative "../lib/boot/web_origins"
 
 module Api
   class Application < Rails::Application

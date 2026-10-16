@@ -152,7 +152,7 @@ cd api && bin/rake ai:eval           # OCR plus the chat sets on LLM_PROVIDER (n
 | `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`, `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY`, `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT` | Encryption of personal-data columns | Random, generated |
 | `AUDIT_HMAC_KEY` | Pseudonymous actor references in the audit log | Random, generated |
 | `RAILS_MASTER_KEY` | Decrypts credentials in production | Commented out |
-| `WEB_ORIGIN` | Web origin allowed by CORS | `http://localhost:3000` |
+| `WEB_ORIGIN` | Web origin(s) allowed by CORS, comma-separated; required in production | `http://localhost:3000` |
 | `MAX_UPLOAD_MB` | Upload size limit | `10` |
 | `OCR_CONFIDENCE_THRESHOLD` | Minimum OCR confidence (0-100) to pre-fill a field | `60` |
 | `GOLDEN_DIR` | Golden set directory for the seed and the eval | `eval/golden` |

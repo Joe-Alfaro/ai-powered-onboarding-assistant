@@ -1399,3 +1399,24 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   image with Tesseract, slower first run); asking for a token in setup instead of writing env
   files.
 - **Affects:** R32, R33
+
+## 2026-10-16: CORS for the web app's origin
+
+- **Decided by:** agent (implementation agent, setup), approved by the orchestrator
+- **Decision:** the API allows cross-origin requests from `WEB_ORIGIN` only (a comma-separated
+  list) through `rack-cors`, with the `Authorization` and `Content-Type` request headers and no
+  credentials, since the bearer token travels in a header and no cookies are used. `WebOrigins`
+  (`lib/boot/web_origins.rb`) raises at boot in production when `WEB_ORIGIN` is missing or blank,
+  because web and API are separate origins there and a missing value would silently block every
+  browser call. Development and test default to `http://localhost:3000`. The middleware is
+  inserted first, so preflights and early errors such as the upload limit's 413 carry the
+  headers.
+- **Found by:** the fresh-clone README run (R32). Sign-in to Supabase worked, but the browser's
+  first API call (`GET /onboarding`) was blocked: no slice owned CORS, `rack-cors` was commented
+  out and `WEB_ORIGIN` was documented but never read. The request spec was written first and
+  failed before the change. The e2e slice's full-flow Playwright test (written by another agent)
+  also exercises it, because every page after sign-in calls the API from the browser.
+- **Alternatives:** proxying the API through Next.js rewrites (same origin, but every request
+  takes an extra hop through the web service, and the architecture has the browser call the API
+  directly); allowing any origin (exposes the API to every site).
+- **Affects:** R30, R32
