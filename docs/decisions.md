@@ -848,3 +848,31 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   Storage timeout. JPEG originals keep their EXIF metadata in the bucket for their short life,
   because the specs require the stored bytes to match the upload.
 - **Affects:** R5, R10, R12, R13, R14, R17
+
+## 2026-10-16: Privacy full-flow spec contracts set by the tests
+
+- **Decided by:** agent (test agent, privacy-flow)
+- **Decision:** `api/spec/requests/privacy_flow_spec.rb` runs one API-level flow (sign in, chat,
+  consent, a real card through real OCR uploaded under a distinctive filename, confirm with every
+  value edited, the manual-entry path for a second user, book, reschedule by API and by chat, a
+  forced LLM 503, and the purge job) and checks R15 and R20 against what it captured.
+  - **Log capture** is `Rails.logger` (which Lograge, ActiveJob and the app write to) at `info`,
+    the production level, plus `$stdout` and `$stderr`. A spec pins production's default
+    `log_level` to `info`, because debug-level SQL lines would carry chat text.
+  - **LLM debug logging** is checked by recording the `@debug_output` of every `Net::HTTP`
+    connection that sends a request; all must be nil.
+  - **The 503** goes through the real Anthropic adapter to a WebMock stub whose error body echoes
+    the request, so a leak of the provider's error body into the logs would carry the payload.
+  - **R20 redaction gotcha:** once a user has a confirmed identity (from OCR or typed in), chat
+    must build its payload with that identity, so the values typed in a later message, the
+    history and the draft reach the LLM as `[NAME]`, `[DATE_OF_BIRTH]` and `[ADDRESS]`. Today
+    `Chat::Orchestrator` passes `identity: {}`; the identity source is the user's `Onboarding`.
+  - **Fixture:** `spec/fixtures/files/privacy/distinctive_id.jpg` (made by the `make_fixtures`
+    script beside it) prints values that appear nowhere else, so OCR-read document data can be
+    searched for in logs and payloads separately from the edited values the user confirms.
+  - The flow runs once per spec run and its plain-data result is shared by the examples, to
+    avoid repeating real OCR 15 times.
+  - Frontend log capture is deferred to ESLint `no-console` and the later Playwright slice.
+- **Alternatives:** stubbing OCR (would not prove a real image's bytes stay out); capturing at
+  `debug` (not what production emits); one example per run of the flow (about 60 s).
+- **Affects:** R15, R20
