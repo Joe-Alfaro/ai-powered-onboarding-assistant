@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Regenerates the privacy flow fixture with the vips CLI: a made-up card whose every value is
+# distinctive, so the R15 and R20 specs can search logs and LLM payloads for it.
+# Usage: spec/fixtures/files/privacy/make_fixtures
+set -euo pipefail
+
+dir="$(cd "$(dirname "$0")" && pwd)"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+vips text "$tmp/ink.v" "SAMPLE IDENTIFICATION CARD
+SPECIMEN NOT A REAL DOCUMENT
+NAME ORVANDE KESTRELMOOR
+DOB 08/19/1962
+ADDRESS 5127 BRAMBLEWICK ROW
+HOLLOWMERE, ZZ 00000
+ISS 01/02/2020
+EXP 01/02/2030" --font "Helvetica 14" --dpi 300
+vips invert "$tmp/ink.v" "$tmp/text.v"
+width=$(( $(vipsheader -f width "$tmp/text.v") + 160 ))
+height=$(( $(vipsheader -f height "$tmp/text.v") + 160 ))
+vips embed "$tmp/text.v" "$tmp/card.v" 80 80 "$width" "$height" --extend background --background 255
+vips copy "$tmp/card.v" "$dir/distinctive_id.jpg[Q=85]"
