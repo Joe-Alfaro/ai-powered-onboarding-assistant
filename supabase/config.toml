@@ -1,0 +1,60 @@
+# Supabase CLI config for the local stack (`supabase start`): Auth and Storage for development and
+# the grader quick-start. The API's own tables live in the docker compose Postgres, so only the
+# services the app calls are enabled here. Settings left out use the CLI defaults.
+project_id = "onboarding-assistant"
+
+[api]
+enabled = true
+port = 54321
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[db.seed]
+enabled = false
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000"]
+jwt_expiry = 3600
+# The API accepts only asymmetric (ES256 or RS256) tokens. bin/setup generates this key file with
+# `supabase gen signing-key --algorithm ES256`. It is a private key: never commit it.
+signing_keys_path = "./signing_keys.json"
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+[storage]
+enabled = true
+file_size_limit = "10MiB"
+
+[storage.s3_protocol]
+enabled = false
+
+[storage.vector]
+enabled = false
+
+# Private bucket for ID images until they are confirmed or purged (STORAGE_BUCKET).
+[storage.buckets.id-documents]
+public = false
+file_size_limit = "10MiB"
+
+[realtime]
+enabled = false
+
+[studio]
+enabled = false
+
+[local_smtp]
+enabled = false
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false

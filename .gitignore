@@ -6,3 +6,8 @@ _private
 !.env.example
 .DS_Store
 node_modules/
+
+# Supabase CLI: the local signing key is private, and .temp and .branches are CLI state.
+supabase/signing_keys.json
+supabase/.temp/
+supabase/.branches/

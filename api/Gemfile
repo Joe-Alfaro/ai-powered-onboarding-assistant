@@ -33,8 +33,8 @@ gem "jwt", "~> 3.3"
 # Single-line JSON request logs
 gem "lograge", "~> 0.15.1"
 
-# Use Rack CORS for handling Cross-Origin Resource Sharing (CORS), making cross-origin Ajax possible
-# gem "rack-cors"
+# CORS for the web app's origin (WEB_ORIGIN), which calls the API from the browser
+gem "rack-cors", "~> 3.0"
 
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
@@ -49,4 +49,10 @@ end
 group :test do
   gem "simplecov", require: false
   gem "webmock"
+end
+
+group :development do
+  # Loads api/.env for bin/rails server, db:seed and the eval tasks. Not in test: specs set their
+  # own environment and must never pick up real keys.
+  gem "dotenv"
 end

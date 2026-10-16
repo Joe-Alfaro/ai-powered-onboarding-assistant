@@ -4,6 +4,195 @@ A Rails API (`api/`) and a React web app (`web/`) for onboarding: ID upload with
 assistant that collects an assessment, and scheduling. `ARCHITECTURE.md` is the design;
 `docs/requirements/onboarding-assistant.md` lists the requirements (R1, R2, ...).
 
+## Quick start
+
+This takes about 15 minutes on a fresh macOS machine, most of it downloads. You need no paid key:
+a free Groq key (or a local Ollama) is enough for chat and the eval.
+
+### 1. System dependencies
+
+| Dependency | Why |
+| --- | --- |
+| Ruby 3.4 | Rails API |
+| Node 20+ and npm | Next.js web app |
+| Docker (Desktop or daemon), running | The API's Postgres and the local Supabase stack |
+| Supabase CLI | Local Auth and Storage (`supabase start`) |
+| Tesseract 5 with English data | OCR |
+| libvips with libheif | Image decoding and preprocessing, including HEIC photos |
+| gitleaks (optional) | The secret scan in `bin/gates` |
+
+macOS, with [Homebrew](https://brew.sh) and [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+installed:
+
+```sh
+brew install ruby node tesseract vips gitleaks supabase/tap/supabase
+# Put Homebrew's Ruby first on PATH (add this line to ~/.zshrc to keep it):
+export PATH="$(brew --prefix ruby)/bin:$(gem environment gemdir)/bin:$PATH"
+```
+
+Homebrew's `tesseract` includes English data, and its `vips` is built with libheif.
+
+Debian or Ubuntu (not verified by us): install Docker Engine, Ruby 3.4 (for example with `mise` or
+`rbenv`) and Node 20+, then
+
+```sh
+sudo apt-get install -y tesseract-ocr tesseract-ocr-eng libvips-tools libheif1 libpq-dev build-essential
+```
+
+and the Supabase CLI from <https://supabase.com/docs/guides/local-development/cli/getting-started>.
+
+### 2. Set up
+
+```sh
+git clone <repository URL> onboarding-assistant
+cd onboarding-assistant
+bin/setup
+```
+
+`bin/setup` checks the dependencies above, installs the gems and npm packages, starts the local
+Supabase stack and the API's Postgres, writes `api/.env` and `web/.env.local` from the
+`.env.example` files with local values and fresh keys, migrates, and runs the seed. The first
+`supabase start` downloads about 2 GB of images (about 2 minutes on a fast connection); later runs
+take seconds. It is safe to run again, and it never overwrites an existing `.env` file.
+
+### 3. Add an LLM key
+
+Chat and the eval need one provider. Edit `api/.env`:
+
+- **Groq (free):** create a key at <https://console.groq.com/keys>, then uncomment `GROQ_API_KEY` and set it.
+  `LLM_PROVIDER=groq` is the default.
+- **Ollama (local, no key):** run `ollama serve`, pull a model, and set `LLM_PROVIDER=ollama` and
+  `LLM_MODEL`.
+
+Everything else, including the seed, the tests and the OCR eval, works without a key.
+
+### 4. Run it
+
+In two terminals:
+
+```sh
+cd api && bin/rails server   # http://localhost:3001
+cd web && npm run dev        # http://localhost:3000
+```
+
+Open <http://localhost:3000> and sign in with a demo user.
+
+### Demo credentials
+
+The seed creates these confirmed users in the local Supabase Auth, and prints them each time it
+runs:
+
+| Email | Password |
+| --- | --- |
+| `demo@example.com` | `demo-onboarding-2026` |
+| `demo2@example.com` | `demo-onboarding-2026` |
+
+### Seed
+
+```sh
+cd api && bin/rails db:seed
+```
+
+One command loads the open appointment slots (weekdays over the next two weeks, stored in UTC),
+creates the demo users through the Supabase Auth admin API, and checks that the OCR golden set
+(`api/eval/golden`) is complete. It is idempotent: run it again at any time, for example to add
+slots once the seeded ones have passed.
+
+## Tests and gates
+
+`bin/gates` runs every gate, the same as the pre-push hook and CI: the env check, RuboCop, ESLint,
+Prettier, `tsc`, Jest with coverage thresholds, RSpec with per-module coverage minimums, and the
+gitleaks secret scan over the full history. RSpec uses the API's Postgres, so start it first if
+`bin/setup` hasn't:
+
+```sh
+docker compose up -d postgres
+bin/gates
+```
+
+Or one suite at a time:
+
+```sh
+cd api && bundle exec rspec          # API specs (real Tesseract and libvips, no network)
+cd api && bundle exec rubocop
+cd web && npm test                   # Jest
+cd web && npm run lint && npm run typecheck && npm run format:check
+bin/check-env                        # every env var the code reads is in an .env.example
+```
+
+## Eval
+
+```sh
+cd api && bin/rake ai:eval:ocr       # per-field OCR accuracy on the golden set, no key needed
+cd api && bin/rake ai:eval           # OCR plus the chat sets on LLM_PROVIDER (needs its key)
+```
+
+[AI eval](#ai-eval-r27-r28) below covers the full harness and the provider comparison.
+
+## Environment variables
+
+`bin/setup` writes local values for you. Every variable the code reads is listed and explained in
+[api/.env.example](api/.env.example) and [web/.env.example](web/.env.example), and `bin/check-env`
+(part of `bin/gates`) fails if one is missing. Never commit `.env` files.
+
+### API (`api/.env`)
+
+| Variable | Purpose | Local value |
+| --- | --- | --- |
+| `DATABASE_URL` | Production Postgres connection string | Commented out, so the `DB_*` settings apply |
+| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` | Local and CI Postgres | `localhost`, `5433`, `postgres`, `postgres` (docker compose) |
+| `SUPABASE_URL` | Supabase project URL (Auth admin API and Storage) | `http://127.0.0.1:54321` |
+| `SUPABASE_JWKS_URL` | Public keys that verify sign-in tokens | `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only key for Storage and the Auth admin API | From `supabase status` |
+| `STORAGE_BUCKET` | Private bucket for ID images | `id-documents` (created by `supabase start`) |
+| `LLM_PROVIDER`, `LLM_MODEL` | Chat provider (`anthropic`, `groq`, `gemini`, `ollama`) and model | `groq`, provider default |
+| `LLM_FALLBACK_PROVIDER`, `LLM_FALLBACK_MODEL` | Provider tried once when the primary fails | Empty (none) |
+| `CLAUDE_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY` | Provider keys; only the configured ones are needed | Empty: add yours |
+| `OLLAMA_BASE_URL` | Local Ollama server | `http://localhost:11434` |
+| `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`, `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY`, `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT` | Encryption of personal-data columns | Random, generated |
+| `AUDIT_HMAC_KEY` | Pseudonymous actor references in the audit log | Random, generated |
+| `RAILS_MASTER_KEY` | Decrypts credentials in production | Commented out |
+| `WEB_ORIGIN` | Web origin(s) allowed by CORS, comma-separated; required in production | `http://localhost:3000` |
+| `MAX_UPLOAD_MB` | Upload size limit | `10` |
+| `OCR_CONFIDENCE_THRESHOLD` | Minimum OCR confidence (0-100) to pre-fill a field | `60` |
+| `GOLDEN_DIR` | Golden set directory for the seed and the eval | `eval/golden` |
+| `RESULTS_DIR` | Where `ai:eval` writes its results files | `eval/results` |
+| `PORT` | Port the API listens on | `3001` |
+| `RAILS_MAX_THREADS`, `JOB_CONCURRENCY`, `SOLID_QUEUE_IN_PUMA`, `RAILS_LOG_LEVEL`, `PIDFILE`, `API_DATABASE_PASSWORD` | Puma, Solid Queue and production runtime settings | Defaults from the example |
+
+### Web (`web/.env.local`)
+
+| Variable | Purpose | Local value |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL, for sign-in | `http://127.0.0.1:54321` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public anon key | From `supabase status` |
+| `NEXT_PUBLIC_API_URL` | Rails API base URL | `http://localhost:3001` |
+| `NEXT_PUBLIC_LONG_PAUSE_SECONDS` | Inactivity before the long-pause support content appears | `45` |
+
+`NEXT_PUBLIC_` values are sent to the browser, so they must never be secrets.
+
+## Stopping and resetting
+
+```sh
+supabase stop                 # stop Auth and Storage (add --no-backup to discard their data)
+docker compose down           # stop the API's Postgres (add -v to discard its data)
+```
+
+To start over, run both with their discard flags, delete `api/.env` and `web/.env.local`, and
+run `bin/setup` again.
+
+## Troubleshooting
+
+- **A port is in use.** The API's Postgres uses 5433 (`DB_PORT` in `api/.env`), Supabase uses
+  54320 to 54329 (`supabase/config.toml`), the API uses 3001 and the web app 3000.
+- **Sign-in fails with "That email and password do not match".** Run `cd api && bin/rails db:seed`
+  to create the demo users, and check that `supabase status` shows the stack running.
+- **The seed fails with "Supabase Auth returned HTTP 403".** Another checkout's Supabase stack is
+  running under the same project id, with a different signing key. Run `supabase stop` in that
+  checkout, then `bin/setup` again.
+- **Chat says the assistant is unavailable right now.** Add an LLM key to `api/.env` (step 3) and restart
+  the API.
+
 ## AI eval (R27, R28)
 
 ```sh
