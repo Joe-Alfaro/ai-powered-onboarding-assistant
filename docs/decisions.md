@@ -999,3 +999,72 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Tradeoffs:** a reload loses the visible transcript. Changing the client would have offered
   manual entry on steps where it means nothing.
 - **Affects:** R2, R16, R30, R34
+
+## 2026-10-15: Schedule page contract set by the web-schedule tests
+
+- **Decided by:** agent (test agent, web-schedule)
+- **Decision:** the schedule tests fix this contract for the implementer.
+  - `web/src/schedule/Scheduler.tsx` exports `<Scheduler api={ApiClient} />`. It takes the API
+    client as a prop, so the tests use the real `createApiClient` with fetch faked at the
+    boundary. `web/src/app/(onboarding)/schedule/page.tsx` renders an `h1` "Schedule a call" and
+    a `Scheduler` built from `NEXT_PUBLIC_API_URL` (read when the page renders, not at import)
+    and `getAccessToken`.
+  - On load it calls `GET /slots` and `GET /bookings` and keeps nothing in `localStorage` or
+    `sessionStorage` (R8). The booking always comes from the API.
+  - **Picker:** a group named "Available times" (a `fieldset` and `legend` with native radios,
+    or an ARIA `radiogroup`). Each radio's name is the slot start from `formatLocalDateTime` in
+    the browser zone with its zone label (R37). Arrow keys move the selection, the way native
+    radios do (R34). A chosen slot also shows as text starting "Selected:". The submit button
+    is "Book this time" with no booking and "Move to this time" when rescheduling. With no open
+    slots it says "No open times" and shows no button.
+  - **Booking:** a region named "Your booking" (a `section` labelled by its heading) shows the
+    booked time and the word "Booked", with "Reschedule" and "Cancel booking" buttons. It stays
+    visible while rescheduling.
+  - **Results:** one `role="status"` element announces "booked", "rescheduled" or "cancelled".
+    Errors use `role="alert"`, and there is one alert at a time.
+  - **Conflicts (R7):** a `slot_taken` 409 on `POST` or `PATCH` shows the page's own message,
+    which contains "just taken". It keeps the picker open, keeps the existing booking, and loads
+    `GET /slots` again so the taken slot drops out.
+  - **Cancel (R36):** "Cancel booking" asks first ("Cancel your call ..."), with "Yes, cancel
+    it" and "Keep my booking" buttons. Nothing is sent until the user confirms. After the cancel,
+    the picker returns with the freed slot listed.
+  - **Failures:** load errors use `ErrorNotice`, and "Try again" reloads the page data. A missing
+    token shows the client's "sign in" message with no retry.
+  - `web/src/test-utils/schedulingApi.ts` is an in-memory fake of the scheduling endpoints that
+    follows the request specs. `takeSlot` simulates another user booking a slot, and `failNext`
+    injects one failure.
+- **Alternatives:** a native `<dialog>` for the cancel confirmation (jsdom can't open it
+  modally); a listbox instead of radios; pinning exact formatted strings instead of regexes.
+- **Tradeoffs:** checking the cancel step with buttons, not a dialog role, leaves the implementer
+  free to confirm inline. The time regexes accept any whitespace before AM/PM, because ICU
+  versions differ there. A scratch implementation, deleted before commit, passed every test, and
+  five mutations of it each failed the tests aimed at them.
+- **Deferred:** Playwright e2e for the real sign-in, sign-out and sign-in-again flow (R8 across
+  real browser sessions), `@axe-core/playwright` on the deployed page, and color contrast
+  (R34), which jsdom can't compute.
+- **Affects:** R6, R7, R8, R30, R34, R36, R37
+
+## 2026-10-15: Schedule page refreshes open slots after every change
+
+- **Decided by:** agent (implementation agent, web-schedule)
+- **Decision:**
+  - `Scheduler` reads `GET /slots` again after every successful book, reschedule or cancel, and
+    after a `slot_taken` 409, then shows the new slots, booking and result in one update. The
+    page never works out which slots are open on its own; the API is the source of truth (R7,
+    R8). If that refresh fails, the old list is shown without the slot just booked or taken.
+  - The `role="status"` and `role="alert"` messages render only while they have text, and both
+    clear when the user starts the next action (Reschedule, Cancel booking, submit), so a
+    screen reader hears each result once and there is never a stale result beside a new one.
+  - Cancelling confirms inline inside the "Your booking" region, replacing the Reschedule and
+    Cancel buttons with "Yes, cancel it" and "Keep my booking". The submit button is disabled
+    until a slot is chosen and while a request is in flight, so a double click can't send twice.
+  - The schedule page is a client component that builds its API client once with `useMemo`,
+    because a server page can't pass the token function to a client component.
+- **Alternatives:** removing the booked slot from the local list (drifts from the API when
+  someone else books); an always-present empty live region (announces reliably on more screen
+  readers, but leaves an empty status the tests would read as the result); a modal dialog for
+  the cancel step.
+- **Tradeoffs:** one extra `GET /slots` per change. Conditionally rendered live regions are
+  announced by most but not all screen reader and browser pairs; the deferred Playwright and
+  axe checks on the deployed page (R34) should confirm it.
+- **Affects:** R6, R7, R8, R34, R36
