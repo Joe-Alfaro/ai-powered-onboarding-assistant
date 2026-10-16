@@ -13,7 +13,8 @@ require "pathname"
 root = Pathname(ARGV[0] || File.expand_path("..", __dir__))
 
 APPS = %w[api web].freeze
-SKIPPED_DIRECTORIES = %w[.git .next coverage log node_modules spec storage tmp vendor].freeze
+# e2e holds the Playwright tests and their harness, which set the stack's environment themselves.
+SKIPPED_DIRECTORIES = %w[.git .next coverage e2e log node_modules spec storage tmp vendor].freeze
 TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?\z|\Ajest\.(config|setup)\./
 RUBY_FILE = /\.(rb|rake|ru|erb|ya?ml)\z|\A(Gemfile|Rakefile)\z/
 SCRIPT_FILE = /\.[cm]?[jt]sx?\z/

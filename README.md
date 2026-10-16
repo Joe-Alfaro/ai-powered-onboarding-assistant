@@ -120,6 +120,27 @@ cd web && npm run lint && npm run typecheck && npm run format:check
 bin/check-env                        # every env var the code reads is in an .env.example
 ```
 
+### End-to-end tests
+
+Playwright drives the whole flow in Chromium against the real local stack: Supabase Auth and
+Storage, the API with real Tesseract, and a production build of the web app. The LLM is a small
+fake OpenAI-compatible server (`web/e2e/support/fake-llm.mjs`) reached through the Ollama adapter,
+so no provider key is used. Each test signs up its own user, and axe checks every page.
+
+The local Supabase stack and the API's Postgres must be running (`bin/setup` starts both). Then:
+
+```sh
+cd web && npx playwright install chromium   # once
+cd web && npm run e2e
+```
+
+`npm run e2e` starts the fake LLM (port 3412), the API (3411) and the web app (3410) itself, away
+from the dev servers on 3000 and 3001. The API runs on its own `api_e2e` database, which is dropped,
+reloaded and seeded at the start of every run. Set `DB_PORT` if the API's Postgres isn't on 5433.
+The long-pause threshold is built at 20 s for the run. One worker runs the tests in order, because
+they share the database and the fake LLM's failure mode. A failed test keeps a trace in
+`web/test-results/` (`npx playwright show-trace <path>`).
+
 ## Eval
 
 ```sh

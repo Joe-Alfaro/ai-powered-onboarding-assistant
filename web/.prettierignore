@@ -3,3 +3,6 @@ coverage/
 node_modules/
 next-env.d.ts
 package-lock.json
+test-results/
+playwright-report/
+blob-report/

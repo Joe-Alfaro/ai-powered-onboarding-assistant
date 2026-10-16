@@ -11,6 +11,8 @@ process.env.TZ = 'America/New_York'
 const config = {
   testEnvironment: 'jsdom',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+  // Playwright runs the end-to-end tests in e2e/ (npm run e2e).
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/e2e/'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
