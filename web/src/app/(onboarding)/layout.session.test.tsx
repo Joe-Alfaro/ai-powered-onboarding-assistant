@@ -112,7 +112,7 @@ describe('onboarding auth guard', () => {
       routeApi(fetchMock, {
         'POST /chat/messages': errorEnvelope(
           401,
-          'unauthenticated',
+          'unauthorized',
           'Your session has ended. Please sign in again.',
           [],
         ),

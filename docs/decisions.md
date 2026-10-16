@@ -1170,8 +1170,9 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
     `/sign-in`.
   - **Auth guard in `(onboarding)/layout.tsx`:** it renders no step content until the Supabase
     session is known. No session, or a session read error, replaces to `/sign-in`.
-  - **API 401s:** any `unauthenticated` `ApiError` raised on a step (a 401 from the API or the
-    client's own missing-token error) replaces to `/sign-in`. Tested through the chat page inside
+  - **API 401s:** any `ApiError` with status 401 raised on a step replaces to `/sign-in`: the
+    API's 401 envelope (code `unauthorized`) and the client's own missing-token error (code
+    `unauthenticated`, status 401) alike, so the web keys on the status, not the code. Tested through the chat page inside
     the layout, so the mechanism must reach pages that build their own client. Other errors stay
     on the page.
   - **Sign-out:** a "Sign out" button in the banner calls `supabase.auth.signOut()` and replaces to
@@ -1198,3 +1199,37 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Deferred:** Playwright for sign-out and sign-in again across real browser sessions (R8) and
   axe on the deployed pages (R34).
 - **Affects:** R8, R9, R19, R30, R34, R37
+
+## 2026-10-16: GET /onboarding contract set by the API request spec
+
+- **Decided by:** agent (test agent, web-flow)
+- **Decision:** `api/spec/requests/onboarding_spec.rb` fixes the API side of the endpoint the
+  web-flow tests use.
+  - `GET /onboarding` needs a token (401 `unauthorized` envelope without one) and returns 200
+    `{ onboarding: { step, assessment, identity: { confirmed, source, confirmed_at } } }` for the
+    token's user only. A `user_id` param is ignored (R19).
+  - **Step is derived, not stored:** from the furthest point reached, `done` with an active
+    booking, else `schedule` with a confirmed identity, else `identity` with a saved assessment,
+    else `chat`. The unused `onboardings.step` column is not read. Furthest point, not first gap,
+    so a user who skipped the chat for manual entry (R16) resumes at `schedule`; the done page
+    then says the assessment isn't saved and links to the chat. A pending upload stays at
+    `identity`, and a cancelled booking goes back to `schedule`.
+  - **New user:** 200 with `step: "chat"`, `assessment: null` and an unconfirmed identity, never a
+    404 or 500. The GET is read-only: it creates no `onboardings` row.
+  - **Assessment:** the saved `assessments.data` as stored (`reason`, `urgency`,
+    `preferred_window`, `distress`, `notes`), or `null`. An unsaved draft in the conversation is
+    not returned.
+  - **Identity is a status only:** `confirmed` (true when `confirmed_at` is set), `source` (`ocr`,
+    `manual` or `null`) and `confirmed_at` as ISO-8601 UTC with `Z`. The name, date of birth and
+    address are never in the payload, and neither are their key names. The done page needs only
+    the status, so the values have no reason to leave the API again after confirmation (R17).
+  - Booking stays on `GET /bookings`; `onboardings`, `assessments` and `bookings` are read, and no
+    table is added.
+  - The web tests use the API's real 401 code, `unauthorized`, so the web keys on status 401.
+- **Alternatives:** storing and advancing `onboardings.step` from each endpoint (several slices
+  would each have to write it, and it can drift from the records); first-gap order (sends a user
+  who skipped the chat back to it on every sign-in); returning masked identity values.
+- **Tradeoffs:** deriving the step costs three small indexed reads per request. The assessment
+  `notes` are free text and may mention personal details, but they are the user's own saved
+  assessment, already shown to them on the chat step.
+- **Affects:** R8, R16, R17, R19

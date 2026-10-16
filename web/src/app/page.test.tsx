@@ -54,7 +54,7 @@ describe('home page', () => {
     routeApi(fetchMock, {
       'GET /onboarding': errorEnvelope(
         401,
-        'unauthenticated',
+        'unauthorized',
         'Your session has ended.',
         [],
       ),
