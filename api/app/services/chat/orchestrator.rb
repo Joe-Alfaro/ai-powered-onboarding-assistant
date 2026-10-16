@@ -78,13 +78,20 @@ module Chat
 
     def payload(conversation, text, retry_errors)
       turns = conversation.recent_messages(RECENT_MESSAGES).map { |message| { role: message.role, content: message.content } }
-      # Identity values for redaction come from the onboarding record once that slice adds it.
-      Llm::PayloadBuilder.new(identity: {}).build(
+      Llm::PayloadBuilder.new(identity: confirmed_identity).build(
         system: Prompt.system(retry_errors: retry_errors),
         turns: turns + [ { role: "user", content: text } ],
         assessment_draft: conversation.draft,
         response_schema: Prompt.response_schema
       )
+    end
+
+    # The identity the user confirmed, from OCR or typed in, so the builder can replace it with
+    # placeholders everywhere in the payload (R20). Empty until they confirm.
+    def confirmed_identity
+      @confirmed_identity ||= Onboarding.find_by(user_id: user_id)&.then do |onboarding|
+        onboarding.identity_source? ? onboarding.slice(*Onboarding::IDENTITY_FIELDS) : {}
+      end || {}
     end
 
     def respond_with_fallback(conversation, text)

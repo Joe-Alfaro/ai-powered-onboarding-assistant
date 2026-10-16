@@ -919,3 +919,26 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Alternatives:** stubbing OCR (would not prove a real image's bytes stay out); capturing at
   `debug` (not what production emits); one example per run of the flow (about 60 s).
 - **Affects:** R15, R20
+
+## 2026-10-16: Privacy purge order, kept consent rows and identity source for redaction
+
+- **Decided by:** agent (implementation agent, privacy)
+- **Decision:**
+  - `Privacy::Purger` revokes consent first, outside the purge transaction, so processing stops
+    even if the purge then fails. The row deletes, the Storage deletes and the audit entry run in
+    one transaction, so a Storage failure rolls the rows back (503) and a retry finds them; the
+    Supabase Auth admin delete runs after the commit, and a 404 from it counts as deleted.
+  - The revoked `consents` rows are kept on both withdrawal and deletion. They hold only the user
+    ID, the text version and times, and they are what keeps `Consent::Ledger.withdrawn?` true, so a
+    still-valid token gets 403 from chat after deletion.
+  - Deletion deletes booking rows rather than cancelling then deleting them; with no active row the
+    slot is open again.
+  - `Chat::Orchestrator` passes the user's confirmed onboarding identity (`identity_source`
+    present) to `Llm::PayloadBuilder`, read with `find_by` so chat never creates an onboarding row.
+    The data-to-LLM contract is unchanged.
+- **Alternatives:** a placeholder consent marker without the user ID after deletion; Auth delete
+  inside the transaction (a network call holding row locks, and it can't be rolled back).
+- **Tradeoffs:** a deleted user's ID stays in `consents` until their tokens expire and beyond; if
+  the Auth delete fails after the commit the user gets 503 and must retry, which repeats the
+  (now empty) purge and writes a second audit entry.
+- **Affects:** R13, R17, R19, R20
