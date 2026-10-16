@@ -29,6 +29,8 @@ Rails.application.routes.draw do
       post :confirm
     end
   end
+  # Where the user is in the flow and what they have finished (R8, R17).
+  get "onboarding" => "onboardings#show"
   namespace :onboarding do
     resource :identity, only: :create
   end

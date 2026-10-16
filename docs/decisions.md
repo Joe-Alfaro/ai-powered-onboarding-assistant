@@ -1233,3 +1233,31 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   `notes` are free text and may mention personal details, but they are the user's own saved
   assessment, already shown to them on the chat step.
 - **Affects:** R8, R16, R17, R19
+
+## 2026-10-16: Web flow implementation choices
+
+- **Decided by:** agent (implementation agent, web-flow)
+- **Decision:**
+  - **401 handling:** `createApiClient` takes an optional `onUnauthorized`, called for any 401
+    (the API's or its own missing-token error) before the error is rethrown. The `(onboarding)`
+    layout provides a handler through `UnauthorizedContext` that replaces to `/sign-in`, and
+    `useApiClient` passes it in. The chat and schedule pages now use `useApiClient` instead of
+    building their own client, so every step reaches the handler. Home and sign-in sit outside the
+    layout and handle a 401 themselves in `useGoToCurrentStep`.
+  - **One trigger engine per step:** the layout creates the engine, keyed on the current step, and
+    shares it through `TriggerEngineContext`. `useStepTriggerEngine` returns the layout's engine
+    when there is one, or starts the page's own engine when the page renders alone (its own
+    tests); the page shows `SupportiveContent` only in the second case. Keying on the step means
+    content shown on one step (an upload failure, say) doesn't follow the user to the next, and
+    the long-pause timer starts afresh on each step.
+  - **Auth guard:** the layout reads the token with `getAccessToken` (a session read error counts
+    as signed out) and renders nothing, banner included, until it knows. Sign-out replaces to
+    `/sign-in` even if `signOut()` throws, since the local session is cleared either way.
+  - **`GET /onboarding`:** `OnboardingsController#show` derives the step from three lookups by
+    `user_id` (`Booking.active`, `onboardings.confirmed_at`, `assessments`), with `find_by` so the
+    GET never creates a row.
+- **Alternatives:** a module-level 401 listener in the client (global state, harder to test);
+  one engine for the whole layout (content would carry across steps).
+- **Tradeoffs:** pages that render the layout's engine depend on the context to show content;
+  rendered alone they fall back to their own, so their existing tests still hold.
+- **Affects:** R8, R9, R17, R19, R30

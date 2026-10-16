@@ -4,6 +4,7 @@ import { STEPS, type StepId } from './steps'
 
 interface AppShellProps {
   currentStep: StepId | null
+  onSignOut?: () => void
   children: ReactNode
 }
 
@@ -44,7 +45,7 @@ function StepItem({
   )
 }
 
-export function AppShell({ currentStep, children }: AppShellProps) {
+export function AppShell({ currentStep, onSignOut, children }: AppShellProps) {
   const currentIndex = STEPS.findIndex(({ id }) => id === currentStep)
 
   function stateOf(index: number) {
@@ -67,6 +68,11 @@ export function AppShell({ currentStep, children }: AppShellProps) {
             ))}
           </ol>
         </nav>
+        {onSignOut && (
+          <button type="button" onClick={onSignOut}>
+            Sign out
+          </button>
+        )}
       </header>
       <main id={MAIN_ID} tabIndex={-1}>
         {children}

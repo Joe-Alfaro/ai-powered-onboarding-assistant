@@ -1,10 +1,10 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { ErrorNotice } from '@/api/ErrorNotice'
-import { ApiError, createApiClient } from '@/api/client'
-import { getAccessToken } from '@/auth/supabase'
+import { ApiError } from '@/api/client'
+import { useApiClient } from '@/api/useApiClient'
 import { AssessmentSummary } from '@/chat/AssessmentSummary'
 import { Conversation, type Turn } from '@/chat/Conversation'
 import {
@@ -13,7 +13,7 @@ import {
   type Assessment,
 } from '@/chat/chatApi'
 import { SupportiveContent } from '@/support/SupportiveContent'
-import { createTriggerEngine } from '@/support/triggerEngine'
+import { useStepTriggerEngine } from '@/support/TriggerEngineContext'
 
 // The identity step's manual form needs no LLM, so the flow carries on
 // without the chat (R16).
@@ -26,13 +26,8 @@ interface FailedSend {
 
 export default function ChatPage() {
   const router = useRouter()
-  const [client] = useState(() =>
-    createApiClient({
-      baseUrl: process.env.NEXT_PUBLIC_API_URL ?? '',
-      getAccessToken,
-    }),
-  )
-  const [engine] = useState(() => createTriggerEngine())
+  const client = useApiClient()
+  const { engine, ownsEngine } = useStepTriggerEngine()
   const nextTurnId = useRef(0)
   const field = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState('')
@@ -41,12 +36,6 @@ export default function ChatPage() {
   const [failed, setFailed] = useState<FailedSend | null>(null)
   const [assessment, setAssessment] = useState<Assessment | null>(null)
   const [replyOffersManualEntry, setReplyOffersManualEntry] = useState(false)
-
-  // The long-pause timer runs only while the chat step is on screen (R9).
-  useEffect(() => {
-    engine.start()
-    return () => engine.stop()
-  }, [engine])
 
   function addTurn(speaker: Turn['speaker'], text: string) {
     const id = nextTurnId.current
@@ -117,7 +106,7 @@ export default function ChatPage() {
           Enter details manually
         </button>
       )}
-      <SupportiveContent engine={engine} />
+      {ownsEngine && <SupportiveContent engine={engine} />}
     </>
   )
 }
