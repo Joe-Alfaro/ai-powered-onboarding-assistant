@@ -848,3 +848,46 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   Storage timeout. JPEG originals keep their EXIF metadata in the bucket for their short life,
   because the specs require the stored bytes to match the upload.
 - **Affects:** R5, R10, R12, R13, R14, R17
+
+## 2026-10-16: Privacy contracts set by the tests (withdrawal and deletion)
+
+- **Decided by:** agent (test agent, privacy-deletion)
+- **Decision:** the privacy-deletion tests fix this contract for the implementer.
+  - **Endpoints:** `DELETE /consents` (withdraw consent) and `DELETE /account` (request deletion),
+    each 204 with no body, matching the web-identity contract. The user comes only from the token;
+    a `user_id` or `id` in the request is ignored, and there is no `/account/:id` route (R19). Both
+    are idempotent: a repeat gets 204 again.
+  - **Service:** `Privacy::Purger.new(user_id:, storage: Storage::Client.default)` with
+    `#withdraw_consent` and `#delete_account`. Both revoke consent through `Consent::Ledger`,
+    hard-delete the user's `onboardings` row (draft and confirmed identity), every
+    `document_uploads` row (pending and confirmed), the Storage objects behind them,
+    `conversations`, `messages` and `assessments`, then write one `audit_events` row. Rows are
+    gone, not flagged; the specs count them with plain SQL.
+  - **Audit actions:** `consent_withdrawn` and `account_deleted`, with `actor_ref` from
+    `AuditEvent.actor_ref_for`. The table keeps exactly `id`, `actor_ref`, `action` and `created_at`.
+  - **Deletion only:** also deletes the Supabase Auth user with
+    `DELETE <SUPABASE_URL>/auth/v1/admin/users/<id>`, sending the service role key as both
+    `Authorization: Bearer` and `apikey`. Withdrawal keeps the Auth user, so the person can still
+    sign in and enter details by hand.
+  - **Active booking on deletion:** cancelled and the slot freed (it shows in `GET /slots` and
+    another user can book it). All of the deleted user's booking rows, active or cancelled, are
+    then deleted, so no row keeps a deleted user's ID. **On withdrawal** bookings are kept: a slot
+    hold isn't personal data under R13, and the person still has an account.
+  - **After revocation:** `GET /documents/:id` and `/preview` return 404. A signed URL issued
+    before stops working because the object is deleted (the fake Storage now serves signed URLs
+    only while the object exists). Chat with a still-valid token gets a 4xx envelope (403
+    `consent_withdrawn` after a withdrawal), makes no LLM call and stores no message. That must
+    also hold after deletion, so the implementer can't drop the user's revoked consent rows unless
+    something else keeps `withdrawn?` true; a token stays valid until it expires even after the
+    Auth user is deleted.
+  - **OCR in flight:** OCR runs inside `POST /documents`, not a background job, so "in flight" is
+    tested through that request: once with the revocation request sent mid-OCR on the same
+    thread, and once on real threads against real Postgres. Either way the upload gets 403 and no
+    upload row, draft, identity value or image is left.
+- **Alternatives:** keeping a cancelled booking as history after deletion (it would keep the
+  deleted user's ID); cancelling bookings on withdrawal too; a soft-delete flag; a background
+  purge job with a status endpoint.
+- **Tradeoffs:** deleting booking history loses no-show statistics for deleted users. Purging
+  synchronously in the request makes it easy to verify, but one Storage call per image makes
+  the request slower for a user with many uploads (in practice, one or two).
+- **Affects:** R13, R19
