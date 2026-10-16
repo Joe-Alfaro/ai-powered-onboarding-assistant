@@ -36,6 +36,9 @@ export interface ApiClientOptions {
   baseUrl: string
   getAccessToken: () => Promise<string | null>
   timeoutMs?: number
+  // Called on any 401, the API's or the client's own missing-token error, so
+  // the app can send the user back to sign in.
+  onUnauthorized?: () => void
 }
 
 export interface RequestOptions {
@@ -125,8 +128,9 @@ export function createApiClient({
   baseUrl,
   getAccessToken,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  onUnauthorized,
 }: ApiClientOptions): ApiClient {
-  async function request<T>(path: string, options: RequestOptions = {}) {
+  async function send<T>(path: string, options: RequestOptions) {
     // Asked on every request so a refreshed token is always used.
     const token = await getAccessToken()
     if (!token) throw UNAUTHENTICATED
@@ -155,6 +159,15 @@ export function createApiClient({
       )
     } finally {
       clearTimeout(timer)
+    }
+  }
+
+  async function request<T>(path: string, options: RequestOptions = {}) {
+    try {
+      return await send<T>(path, options)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) onUnauthorized?.()
+      throw error
     }
   }
 

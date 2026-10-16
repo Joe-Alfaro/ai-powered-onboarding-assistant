@@ -1,21 +1,15 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
 import { useApiClient } from '@/api/useApiClient'
 import { IdentityStep } from '@/identity/IdentityStep'
 import { SupportiveContent } from '@/support/SupportiveContent'
-import { createTriggerEngine } from '@/support/triggerEngine'
+import { useStepTriggerEngine } from '@/support/TriggerEngineContext'
 
 export default function IdentityPage() {
   const router = useRouter()
   const api = useApiClient()
-  const [engine] = useState(() => createTriggerEngine())
-
-  useEffect(() => {
-    engine.start()
-    return () => engine.stop()
-  }, [engine])
+  const { engine, ownsEngine } = useStepTriggerEngine()
 
   return (
     <>
@@ -28,7 +22,7 @@ export default function IdentityPage() {
         }
         onManualEntry={() => router.push('/identity/manual')}
       />
-      <SupportiveContent engine={engine} />
+      {ownsEngine && <SupportiveContent engine={engine} />}
     </>
   )
 }
