@@ -1325,7 +1325,8 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   Gemini model and reporting Gemini as failed.
 - **Tradeoffs:** Haiku is a paid provider, so production depends on a paid key while the app
   still runs on Groq alone (R21). The eval sets are small: one case moves a rate by 4 to 33
-  points. Gemini 3.8 Flash timed out at the 6 s client timeout and hit the free tier's rate limit
-  after 7 calls, so it has no usable numbers yet. The first eval run's Gemini entry predates the
+  points. On the free tier, Gemini 3.8 Flash answered no call in two runs 20 minutes apart:
+  timeouts at the 6 s client timeout and server errors, then a 429. So it has no usable numbers.
+  Ollama (`llama3.2` 3B) ran on a heavily loaded host, which inflates its p95. The first eval run's Gemini entry predates the
   scoring fix and shows $0 and 466 ms where it should show unknown.
 - **Affects:** R21, R27, R28

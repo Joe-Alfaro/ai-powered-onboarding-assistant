@@ -1,0 +1,73 @@
+{
+  "generated_at": "2026-10-16T19:11:04Z",
+  "ocr_engine": "tesseract 5.5.3",
+  "ocr": {
+    "all": {
+      "full_name": 0.9666666666666667,
+      "date_of_birth": 1.0,
+      "address": 1.0
+    },
+    "hard": {
+      "full_name": 0.8333333333333334,
+      "date_of_birth": 1.0,
+      "address": 1.0
+    },
+    "counts": {
+      "all": 30,
+      "hard": 6
+    },
+    "misses": [
+      {
+        "id": "027",
+        "field": "full_name"
+      }
+    ]
+  },
+  "providers": [
+    {
+      "name": "ollama",
+      "provider": "ollama",
+      "model": "llama3.2",
+      "status": "completed",
+      "intents": {
+        "provide-details": {
+          "correct": 2,
+          "total": 6,
+          "pass": false
+        },
+        "ask-question": {
+          "correct": 3,
+          "total": 5,
+          "pass": false
+        },
+        "request-reschedule": {
+          "correct": 4,
+          "total": 5,
+          "pass": true
+        },
+        "express-distress": {
+          "correct": 5,
+          "total": 5,
+          "pass": true
+        },
+        "out-of-scope": {
+          "correct": 5,
+          "total": 5,
+          "pass": true
+        }
+      },
+      "intent_coverage": 0.6,
+      "schema_valid_rate": 0.3333333333333333,
+      "out_of_scope_fallback": 1.0,
+      "no_false_booking": true,
+      "p95_latency_ms": 5204.211999895051,
+      "cost_per_conversation_usd": 0.0,
+      "llm_calls": 37,
+      "failed_llm_calls": 1,
+      "failure_classes": [
+        "Llm::TimeoutError x1"
+      ],
+      "rate_limited": false
+    }
+  ]
+}
