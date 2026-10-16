@@ -8,7 +8,7 @@ module Llm
     DEFAULT_MODELS = {
       "anthropic" => "claude-haiku-4-5",
       "groq" => "openai/gpt-oss-20b",
-      "gemini" => "gemini-2.5-flash",
+      "gemini" => "gemini-3.8-flash",
       "ollama" => "llama3.2"
     }.freeze
     BASE_URLS = {

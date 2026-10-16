@@ -16,7 +16,8 @@ module Eval
     # tokens-per-minute limits (about 2K tokens per call). Specs run unpaced.
     FREE_TIER_PACING = { "anthropic" => 1.5, "groq" => 15, "gemini" => 7, "ollama" => 0 }.freeze
     METRICS = %i[intent_coverage schema_valid_rate out_of_scope_fallback no_false_booking p95_latency_ms
-                 cost_per_conversation_usd llm_calls].freeze
+                 cost_per_conversation_usd llm_calls failed_llm_calls
+                 failure_classes].freeze
 
     # adapter_factory: callable taking provider: and model:, returning an adapter.
     # ocr_scorer: responds to #call with Eval::OcrScorer's report.
@@ -103,7 +104,8 @@ module Eval
     end
 
     def print_provider(entry)
-      header = "#{entry[:name]} (#{entry[:provider]} #{entry[:model]}): completed after #{entry[:llm_calls]} LLM calls"
+      header = "#{entry[:name]} (#{entry[:provider]} #{entry[:model]}): completed, #{entry[:llm_calls]} LLM calls answered"
+      header += ", #{entry[:failed_llm_calls]} failed (#{entry[:failure_classes].join(', ')})" if entry[:failed_llm_calls].positive?
       header += ", cut short by a rate limit (HTTP 429)" if entry[:rate_limited]
       @out.puts header
       entry[:intents].each do |intent, score|

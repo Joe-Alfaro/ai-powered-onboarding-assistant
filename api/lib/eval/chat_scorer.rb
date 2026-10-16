@@ -101,6 +101,8 @@ module Eval
         p95_latency_ms: p95(meter.latencies_ms),
         cost_per_conversation_usd: cost_per_conversation,
         llm_calls: meter.calls.size,
+        failed_llm_calls: meter.failures.size,
+        failure_classes: meter.failures.tally.map { |name, count| "#{name} x#{count}" },
         rate_limited: @rate_limited
       }
     end
@@ -129,7 +131,8 @@ module Eval
 
     def cost(usages)
       price = @prices[@model]
-      return if price.nil? || usages.any?(&:nil?)
+      # A conversation with no answered call says nothing about cost.
+      return if price.nil? || usages.empty? || usages.any?(&:nil?)
 
       usages.sum do |usage|
         (usage[:input_tokens] * price.fetch("input_per_mtok")) + (usage[:output_tokens] * price.fetch("output_per_mtok"))
@@ -156,7 +159,7 @@ module Eval
 
     # Wraps the adapter to time each call, keep its token usage and pace calls.
     class Meter
-      attr_reader :calls, :latencies_ms
+      attr_reader :calls, :latencies_ms, :failures
 
       def initialize(adapter, clock, min_interval, sleeper)
         @adapter = adapter
@@ -165,6 +168,7 @@ module Eval
         @sleeper = sleeper
         @calls = []
         @latencies_ms = []
+        @failures = []
         @last_start = nil
       end
 
@@ -176,10 +180,14 @@ module Eval
         pace
         started = @last_start = @clock.call
         response = @adapter.complete(payload, timeout: timeout)
+        # Only answered calls are timed: a rejected request says nothing about serving latency.
+        @latencies_ms << ((@clock.call - started) * 1000)
         @calls << response.usage
         response
-      ensure
-        @latencies_ms << ((@clock.call - started) * 1000) if started
+      rescue Llm::Error => error
+        # The error class only: messages can carry provider detail that doesn't belong in results.
+        @failures << error.class.name
+        raise
       end
 
       private

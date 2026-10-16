@@ -176,7 +176,7 @@ urgency, preferred appointment window, distress flag, and any free-text notes.
 
 Two adapters cover all candidates:
 
-- **Anthropic adapter:** Claude Haiku 5.5 and Claude Sonnet 5.5, using tool use for structured
+- **Anthropic adapter:** Claude Haiku 4.5 and Claude Sonnet 5.5, using tool use for structured
   output.
 - **OpenAI-compatible adapter:** Groq, Gemini (OpenAI-compatible endpoint) and Ollama, using JSON
   schema response formats.

@@ -10,9 +10,9 @@ claude-sonnet-5-5:
 openai/gpt-oss-20b:
   input_per_mtok: 0.075
   output_per_mtok: 0.3
-gemini-2.5-flash:
-  input_per_mtok: 0.3
-  output_per_mtok: 2.5
+gemini-3.8-flash:
+  input_per_mtok: 0.75
+  output_per_mtok: 3.75
 llama3.2:
   input_per_mtok: 0
   output_per_mtok: 0
