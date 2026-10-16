@@ -1147,3 +1147,54 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Tradeoffs:** without a focus trap, Tab can leave the open confirmation. The privacy page isn't
   linked from the shell yet, which belongs to the shell owner.
 - **Affects:** R5, R9, R10, R12, R13, R34
+
+## 2026-10-16: Web flow contract set by the web-flow tests
+
+- **Decided by:** agent (test agent, web-flow)
+- **Decision:** the web-flow tests fix this contract for the implementer.
+  - **New API endpoint `GET /onboarding`** (no API slice owns it yet): 200
+    `{ onboarding: { step, assessment, identity: { confirmed, source, confirmed_at } } }` for the
+    token's user, with `step` one of `chat`, `identity`, `schedule` or `done` (a pending upload
+    resumes at `identity`, because the confirm step needs a live document ID), `assessment` the
+    saved assessment or `null`, and `source` `ocr`, `manual` or `null`. Identity comes back as a
+    status only, never its values. A user with no row gets `step: "chat"`. The web tests fake it
+    at fetch; the API needs a request spec and controller for it.
+  - **Routing by step:** the web maps `step` to the `STEPS` path, and an unknown step to `/chat`.
+    All auth navigation (guard, home, sign-in, sign-out, 401) uses `router.replace`, so Back never
+    returns to a page the user can't see.
+  - **`/sign-in`** (`web/src/app/sign-in/page.tsx`, outside the `(onboarding)` group): an `h1`
+    containing "Sign in" and `SignInForm`. On success it calls `GET /onboarding` and replaces to
+    the current step. If that call fails it shows `ErrorNotice`, and "Try again" retries it.
+  - **Home `/`:** keeps the "Onboarding assistant" heading; signed out it replaces to `/sign-in`
+    without calling the API, signed in it replaces to the current step, and a 401 replaces to
+    `/sign-in`.
+  - **Auth guard in `(onboarding)/layout.tsx`:** it renders no step content until the Supabase
+    session is known. No session, or a session read error, replaces to `/sign-in`.
+  - **API 401s:** any `unauthenticated` `ApiError` raised on a step (a 401 from the API or the
+    client's own missing-token error) replaces to `/sign-in`. Tested through the chat page inside
+    the layout, so the mechanism must reach pages that build their own client. Other errors stay
+    on the page.
+  - **Sign-out:** a "Sign out" button in the banner calls `supabase.auth.signOut()` and replaces to
+    `/sign-in`.
+  - **`/done`** (`web/src/app/(onboarding)/done/page.tsx`): `h1` matching "all set"; reads
+    `GET /onboarding` and `GET /bookings`. Regions: "Assessment summary" (or text saying the
+    assessment is not saved, with a link to `/chat`), "Your details" (confirmed from the ID photo,
+    confirmed from details entered by hand, or not confirmed with a link to `/identity`) and
+    "Your booking" (the slot start from `formatLocalDateTime` with its zone label, or "No call
+    booked" with a link to `/schedule`). Load errors use `ErrorNotice` with "Try again".
+  - **R9 on every step:** the `(onboarding)` layout owns the long-pause trigger, so a step page
+    with no engine of its own still shows the long-pause content in a `status` region. On the chat
+    step inside the layout each trigger's content appears once, so the layout and the page must
+    share one engine (for example through context) rather than each running their own.
+  - `web/src/test-utils/flow.ts` holds the shared router mock, session setup and a fetch router;
+    it is separate from `test-utils/pages.ts` in the identity MR to avoid a conflict.
+- **Alternatives:** deriving the step on the web from `GET /bookings` alone (nothing returns the
+  assessment or identity status); keeping the step in `localStorage` (breaks R8 across browsers);
+  a `?next=` return path on sign-in; `GET /bookings` folded into `GET /onboarding`.
+- **Tradeoffs:** a new endpoint crosses into the API, but it is the only source for the done
+  summary and the current step. Keeping bookings on their own endpoint keeps one source of truth
+  for R8. Sharing one engine means the chat page (and the identity page in its MR) must take the
+  layout's engine, while still working alone in their own tests.
+- **Deferred:** Playwright for sign-out and sign-in again across real browser sessions (R8) and
+  axe on the deployed pages (R34).
+- **Affects:** R8, R9, R19, R30, R34, R37
