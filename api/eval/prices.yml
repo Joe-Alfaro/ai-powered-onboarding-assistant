@@ -1,0 +1,18 @@
+# List prices in US dollars per million tokens, keyed by model id, for the eval's cost per
+# conversation (R28). Checked 2026-10-16 against each provider's public pricing page; update them
+# when a provider changes its prices. Ollama runs locally, so its tokens cost nothing.
+claude-haiku-4-5:
+  input_per_mtok: 1.0
+  output_per_mtok: 5.0
+claude-sonnet-5-5:
+  input_per_mtok: 2.0
+  output_per_mtok: 10.0
+openai/gpt-oss-20b:
+  input_per_mtok: 0.075
+  output_per_mtok: 0.3
+gemini-2.5-flash:
+  input_per_mtok: 0.3
+  output_per_mtok: 2.5
+llama3.2:
+  input_per_mtok: 0
+  output_per_mtok: 0

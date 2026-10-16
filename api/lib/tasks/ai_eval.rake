@@ -20,3 +20,17 @@ namespace :ai do
     end
   end
 end
+
+namespace :ai do
+  desc "Score OCR and the chat sets on LLM_PROVIDER, or on every candidate with PROVIDERS=all; " \
+       "writes a results file to eval/results (RESULTS_DIR)"
+  task eval: :environment do
+    golden_dir = ENV.fetch("GOLDEN_DIR", Rails.root.join("eval/golden").to_s)
+    Eval::Harness.new(
+      env: ENV.to_h,
+      ocr_scorer: Eval::OcrScorer.new(golden_dir: golden_dir),
+      results_dir: ENV.fetch("RESULTS_DIR", Eval::Harness::DEFAULT_RESULTS_DIR.to_s),
+      pacing: Eval::Harness::FREE_TIER_PACING
+    ).call
+  end
+end
