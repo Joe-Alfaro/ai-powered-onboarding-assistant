@@ -33,4 +33,16 @@ RSpec.describe "Chat eval sets" do
     expect(inputs["emoji-only"]).to match(/\A\p{Extended_Pictographic}+\z/)
     expect(inputs["prompt-injection"]).to match(/ignore previous instructions/i)
   end
+
+  it "R3: the adversarial set has diagnosis and outcome bait, each with a bait reply the guard must catch" do
+    bait = adversarial_inputs.select { |entry| entry["expect"] == "no-diagnosis-or-outcome-claim" }
+    messages = bait.map { |entry| entry["message"] }
+
+    expect(messages).to include(a_string_matching(/just tell me what i have/i),
+      a_string_matching(/will i definitely get accepted/i))
+    expect(bait.size).to be >= 4
+    bait.each do |entry|
+      expect(entry["bait_reply"]).to match(ChatHelpers::DIAGNOSIS_OR_OUTCOME), entry["id"]
+    end
+  end
 end

@@ -44,7 +44,7 @@ RSpec.describe "POST /chat/messages", type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(body).to include("reply" => "Happy to help with that.", "intent" => "ask-question", "trigger" => nil,
-        "assessment" => nil, "scheduling" => nil)
+        "assessment" => nil, "scheduling" => nil, "choices" => [])
       expect(body["actions"]).to be_a(Array)
     end
 
@@ -66,20 +66,6 @@ RSpec.describe "POST /chat/messages", type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(body["assessment"]).to include(conversation["expected_assessment"])
-  end
-
-  it "R36: passes the chosen booking and slot to Scheduling::Booker and returns its result" do
-    booking_id = SecureRandom.uuid
-    slot = { id: SecureRandom.uuid, starts_at: "2030-03-05T14:30:00Z", ends_at: "2030-03-05T15:00:00Z" }
-    result = booker_result(outcome: :rescheduled, success: true, slot: slot, booking_id: booking_id)
-    _, booker = stub_booker(result)
-    llm.respond_with(llm_output("request-reschedule", reply: "Booked you for Friday at 3pm!"))
-
-    post_message("Move me to that slot", booking_id: booking_id, slot_id: slot[:id])
-
-    expect(booker).to have_received(:reschedule).with(booking_id: booking_id, slot_id: slot[:id])
-    expect(body["scheduling"]).to eq(result.to_h.deep_stringify_keys)
-    expect(body["reply"]).not_to match(/friday|3\s*pm/i)
   end
 
   describe "R3 [gotcha]: hostile input gets a fallback reply, not an error" do
@@ -151,6 +137,54 @@ RSpec.describe "POST /chat/messages", type: :request do
       expect(seconds).to be < 10
       expect(response).to have_http_status(:service_unavailable)
       expect(body.dig("error", "actions")).to eq(ChatHelpers::WIRE_ERROR_ACTIONS)
+    end
+
+    describe "R16: one overall deadline across the first call, the retry and the fallback provider" do
+      let(:invalid_answer) { { "reply" => "Not the response schema" } }
+
+      # The user gets the "try again" or "continue manually" choice: the 503 envelope with both
+      # actions, or a 200 fallback reply that offers manual entry.
+      def expect_failure_choice
+        if response.status == 503
+          expect(body.dig("error", "actions")).to eq(ChatHelpers::WIRE_ERROR_ACTIONS)
+        else
+          expect(response).to have_http_status(:ok)
+          expect(body["actions"]).to include("manual_entry")
+          expect(body["reply"]).not_to match(ChatHelpers::BOOKING_CLAIM)
+        end
+      end
+
+      it "R16: answers within 10 s when a slow invalid answer is retried and the retry hangs" do
+        slow = FakeLlmAdapter.new.respond_after(5, invalid_answer).hang
+        allow(Llm::Client).to receive(:from_env).and_return(Llm::Client.new(primary: slow))
+
+        seconds = elapsed_seconds { post_message("What happens next?") }
+
+        expect(seconds).to be < 10
+        expect_failure_choice
+      end
+
+      it "R16: answers within 10 s when the primary hangs, the fallback answers invalid and the retry hangs too" do
+        primary = FakeLlmAdapter.new.hang.hang
+        fallback = FakeLlmAdapter.new.respond_after(2.5, invalid_answer).hang
+        allow(Llm::Client).to receive(:from_env).and_return(Llm::Client.new(primary: primary, fallback: fallback))
+
+        seconds = elapsed_seconds { post_message("What happens next?") }
+
+        expect(seconds).to be < 10
+        expect_failure_choice
+      end
+
+      it "R16: never gives the LLM more than the time left before the deadline" do
+        slow = FakeLlmAdapter.new.respond_after(4, invalid_answer).hang
+        allow(Llm::Client).to receive(:from_env).and_return(Llm::Client.new(primary: slow))
+
+        post_message("What happens next?")
+
+        # 4 s spent on the first call leaves under 6 s for the retry.
+        expect(slow.timeouts.drop(1)).to all(be < 6)
+        expect_failure_choice
+      end
     end
 
     it "R16: makes no commitment in the error envelope" do

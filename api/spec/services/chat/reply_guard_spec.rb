@@ -3,11 +3,9 @@ require "rails_helper"
 # R3 [gotcha]: the chatbot never claims a booking, time or outcome that isn't backed by stored
 # data. Booking and time statements come only from Scheduling::Booker's structured result; a final
 # guard swaps out any LLM reply that states a date, time or booking the handler result doesn't back.
+# Replies built from Booker's real result are covered end to end in spec/requests/chat_actions_spec.rb.
 RSpec.describe "Chat::Orchestrator reply guard" do
   let(:chat_user_id) { SecureRandom.uuid }
-  let(:booking_id) { SecureRandom.uuid }
-  let(:new_slot) { { id: SecureRandom.uuid, starts_at: "2030-03-05T14:30:00Z", ends_at: "2030-03-05T15:00:00Z" } }
-  let(:old_slot) { { id: SecureRandom.uuid, starts_at: "2030-03-04T09:00:00Z", ends_at: "2030-03-04T09:30:00Z" } }
 
   describe "R3: LLM replies with no handler result behind them" do
     let!(:booker) { stub_booker(booker_result(outcome: :not_found, success: false)).last }
@@ -57,58 +55,6 @@ RSpec.describe "Chat::Orchestrator reply guard" do
       expect(result.reply).to be_present
       expect(result.reply).not_to match(ChatHelpers::DATE_OR_TIME)
       expect(result.reply).not_to match(ChatHelpers::BOOKING_CLAIM)
-    end
-  end
-
-  describe "R3, R36: request-reschedule replies come from Scheduling::Booker's result" do
-    it "R36: calls Scheduling::Booker for the user with the chosen booking and slot" do
-      booker_class, booker = stub_booker(booker_result(outcome: :rescheduled, success: true, slot: new_slot,
-        previous_slot: old_slot, booking_id: booking_id))
-
-      send_chat("Move me to that slot please", llm: fake_llm(llm_output("request-reschedule")),
-        booking_id: booking_id, slot_id: new_slot[:id])
-
-      expect(booker_class).to have_received(:new).with(user_id: chat_user_id)
-      expect(booker).to have_received(:reschedule).with(booking_id: booking_id, slot_id: new_slot[:id])
-    end
-
-    it "R36: on success, returns the booker's structured result and a reply that reflects it" do
-      result_data = booker_result(outcome: :rescheduled, success: true, slot: new_slot, previous_slot: old_slot,
-        booking_id: booking_id)
-      stub_booker(result_data)
-
-      result = send_chat("Move me to that slot please",
-        llm: fake_llm(llm_output("request-reschedule", reply: "Done! See you Friday at 3pm.")),
-        booking_id: booking_id, slot_id: new_slot[:id])
-
-      expect(result.scheduling).to eq(result_data.to_h)
-      expect(result.reply).to match(/moved|rescheduled|changed/i)
-      expect(result.reply).not_to match(/friday|3\s*pm/i)
-    end
-
-    it "R3: when the slot is taken, says so and never claims the move happened" do
-      stub_booker(booker_result(outcome: :slot_taken, success: false, slot: new_slot))
-
-      result = send_chat("Move me to that slot please",
-        llm: fake_llm(llm_output("request-reschedule", reply: "All done, you're booked for Tuesday at 2:30pm!")),
-        booking_id: booking_id, slot_id: new_slot[:id])
-
-      expect(result.scheduling).to include(outcome: "slot_taken")
-      expect(result.reply).to match(/taken|no longer available|not available|isn't available/i)
-      expect(result.reply).not_to match(ChatHelpers::BOOKING_CLAIM)
-      expect(result.reply).not_to match(/all done/i)
-    end
-
-    it "R3: when the booking isn't found, says so and never claims the move happened" do
-      stub_booker(booker_result(outcome: :not_found, success: false))
-
-      result = send_chat("Move me to that slot please",
-        llm: fake_llm(llm_output("request-reschedule", reply: "Rescheduled! See you Monday.")),
-        booking_id: booking_id, slot_id: new_slot[:id])
-
-      expect(result.scheduling).to include(outcome: "not_found")
-      expect(result.reply).not_to match(ChatHelpers::BOOKING_CLAIM)
-      expect(result.reply).not_to match(/rescheduled!|monday/i)
     end
   end
 end

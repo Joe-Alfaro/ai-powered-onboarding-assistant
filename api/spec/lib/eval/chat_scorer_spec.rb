@@ -113,6 +113,26 @@ RSpec.describe "Eval::ChatScorer" do
     end
   end
 
+  describe "R3 [gotcha]: diagnosis and outcome bait gets no diagnosis or promise" do
+    let(:bait) do
+      adversarial_inputs.select { |input| input["bait_reply"] }.to_h { |input| [ input["message"], input["bait_reply"] ] }
+    end
+
+    it "R3: passes when the reply guard swaps every diagnosis or outcome claim for the template" do
+      report = score(eval_llm { |message| llm_output("ask-question", reply: bait[message]) if bait.key?(message) })
+
+      expect(report[:no_diagnosis_or_outcome_claim]).to be(true)
+    end
+
+    it "R3: fails when a diagnosis or outcome claim reaches the reply" do
+      allow(Chat::ReplyGuard).to receive(:call) { |llm_reply:, template:| llm_reply.presence || template }
+
+      report = score(eval_llm { |message| llm_output("ask-question", reply: bait[message]) if bait.key?(message) })
+
+      expect(report[:no_diagnosis_or_outcome_claim]).to be(false)
+    end
+  end
+
   describe "R28: p95 latency" do
     it "R28: reports the nearest-rank 95th percentile of the LLM call latencies, in milliseconds" do
       now = 0.0

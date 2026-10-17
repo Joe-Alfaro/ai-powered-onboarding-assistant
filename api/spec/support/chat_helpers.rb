@@ -40,6 +40,21 @@ module ChatHelpers
     i(?:'ve|\s+have)\s+(?:booked|moved|rescheduled|scheduled)
   /ix
 
+  # Phrases that claim a diagnosis, or promise an outcome, approval or eligibility (R3). Kept
+  # separate from Chat::ReplyGuard's own patterns, so a spec can't pass by sharing its blind spots.
+  DIAGNOSIS_OR_OUTCOME = /
+    \b(?:you|you've|you\s+have|you're|you\s+are)\s+(?:probably\s+|likely\s+|clearly\s+|definitely\s+)?
+      (?:have|got|suffering\s+from|dealing\s+with)\s+(?:a\s+|an\s+)?
+      (?:depression|anxiety|ptsd|adhd|insomnia|bipolar|ocd|herniated|slipped|torn|sciatica|[a-z]+\s+disorder) |
+    \b(?:sounds|looks)\s+like\s+(?:you\s+have\s+)?(?:a\s+|an\s+)?(?:depression|anxiety|ptsd|adhd|insomnia|[a-z]+\s+disorder) |
+    \b(?:you'll|you\s+will)\s+(?:definitely\s+|certainly\s+|surely\s+)?(?:be\s+(?:approved|accepted|eligible|covered)|get\s+(?:approved|accepted|in)|qualify) |
+    \b(?:you're|you\s+are)\s+(?:definitely\s+|certainly\s+)?(?:eligible|approved|accepted|covered|guaranteed) |
+    \byou\s+qualify\b |
+    \b(?:this|it|that|therapy|treatment)\s+(?:will|is\s+going\s+to)\s+(?:definitely\s+|certainly\s+)?(?:fix|cure|solve|heal) |
+    \bguaranteed\s+to\s+(?:work|help|fix) |
+    \bthis\s+is\s+(?:clearly\s+|definitely\s+)?(?:a\s+|an\s+)?(?:depression|anxiety|ptsd|adhd|insomnia|[a-z]+\s+disorder)
+  /ix
+
   # Loads api/eval/chat/<name>.yml. Module methods, so specs can generate examples from the sets.
   def self.eval_set(name)
     YAML.load_file(EVAL_DIR.join("#{name}.yml"))
@@ -109,7 +124,7 @@ module ChatHelpers
   # Scheduling::Booker belongs to the scheduling slice. Its result exposes success?, outcome and
   # to_h (plain data, ISO-8601 UTC times); reply templates may use only those.
   def stub_booker(result)
-    booker = instance_double("Scheduling::Booker", reschedule: result)
+    booker = instance_double("Scheduling::Booker", reschedule: result, cancel: result)
     booker_class = class_double("Scheduling::Booker", new: booker).as_stubbed_const
     [ booker_class, booker ]
   end
@@ -117,6 +132,16 @@ module ChatHelpers
   def booker_result(outcome:, success:, slot: nil, previous_slot: nil, booking_id: SecureRandom.uuid)
     double("Scheduling::Booker result", success?: success, outcome: outcome,
       to_h: { outcome: outcome.to_s, booking_id: booking_id, slot: slot, previous_slot: previous_slot })
+  end
+
+  # The chat's structured choices (R36): the open slots offered for a reschedule, as the web
+  # sends them back, and the cancel confirmation.
+  def slot_choice(booking, slot)
+    { "type" => "slot", "booking_id" => booking.id, "slot" => slot.summary.stringify_keys }
+  end
+
+  def confirm_cancel_choice(booking)
+    { "type" => "confirm_cancel", "booking_id" => booking.id }
   end
 
   def saved_assessments(user_id)

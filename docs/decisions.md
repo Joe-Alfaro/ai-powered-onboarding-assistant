@@ -1647,3 +1647,50 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Alternatives:** switching development to Solid Queue (needs a queue database locally);
   resetting the failure count on a successful upload.
 - **Affects:** R9, R12, R17, R32
+
+## 2026-10-17: Rescheduling and cancelling through the chat; diagnosis guard; one chat deadline
+
+- **Decided by:** agent (test agent, chat-actions)
+- **Replaces:** the `request-reschedule` handler contract where the web had to send `booking_id`
+  and `slot_id` chosen "in the scheduler" (the web never did, so the chat could never move a
+  booking). The stubbed-Booker R36 examples in `reply_guard_spec.rb` and `chat_messages_spec.rb`
+  are replaced by real-record request specs in `spec/requests/chat_actions_spec.rb`.
+- **Decision:**
+  - **Wire contract.** Every POST /chat/messages 200 body carries `choices` (an array, `[]` when
+    there is nothing to choose). A slot choice is `{ type: "slot", booking_id, slot: { id,
+    starts_at, ends_at } }` (times ISO-8601 UTC, R37); a cancel confirmation is
+    `{ type: "confirm_cancel", booking_id }`. The web sends a choice back as
+    `{ message, booking_id, slot_id }` or `{ message, booking_id, cancel: true }`, where `message`
+    is the button's label so the transcript reads naturally.
+  - **Reschedule request.** The API finds the token user's active booking itself (R19). No
+    booking: a truthful "you have no booking" reply and no choices. With one: up to five open
+    future slots, soonest first, never the user's own, a past or a taken slot. No open slot: says
+    so, no choices.
+  - **Cancel request.** A `request-reschedule` message that mentions cancelling gets a single
+    `confirm_cancel` choice and changes nothing until confirmed. The intent list stays as it is.
+  - **A choice skips the LLM.** A message carrying `slot_id` or `cancel: true` goes straight to
+    `Scheduling::Booker`, with no intent call: a button press is unambiguous, and it keeps working
+    while the LLM is down (R16).
+  - **Checks.** A `booking_id` that isn't the user's changes nothing (Booker reads it as not
+    found). A `slot_id` that isn't open (past) is refused. A slot taken in between returns Booker's
+    `slot_taken` outcome, a truthful reply and fresh choices.
+  - **Where the new time shows.** The reply stays a template (no time in server text, which can't
+    know the user's zone). The web shows the new time from `scheduling.slot` in the browser's zone
+    with its label, in a `role="status"` region named for the appointment, and never shows the
+    slot of a failed outcome (`slot_taken` carries the taken slot).
+  - **Diagnosis and outcome guard (R3).** `Chat::ReplyGuard` also swaps out LLM text that
+    diagnoses the user or promises an outcome, approval or eligibility, on every intent whose
+    handler uses the LLM's text, and `unbacked_claim?` reports it so the eval scores it. Specs
+    check against their own pattern (`ChatHelpers::DIAGNOSIS_OR_OUTCOME`), and also check that
+    safe replies such as "I can't diagnose anything or promise an outcome…" pass through. The eval
+    adds diagnosis and outcome bait to `adversarial.yml` and a `no_diagnosis_or_outcome_claim`
+    result.
+  - **One chat deadline (R16).** The whole chat request, first call, schema retry and fallback
+    provider included, fits one budget under 10 s; each LLM call gets at most the time left. The
+    old per-call budget let a slow invalid answer plus a hung retry reach 11 s, and a hung primary,
+    an invalid fallback answer and a hung retry 17 s. `FakeLlmAdapter#respond_after` scripts the
+    slow answers.
+- **Alternatives:** choices as free text the LLM must parse ("the second one"); the client's
+  booking ID trusted as-is; server-formatted times in the reply; no confirmation before
+  cancelling; a sixth `request-cancel` intent (the intent list is fixed by the requirements).
+- **Affects:** R3, R16, R19, R34, R36, R37

@@ -10,7 +10,9 @@
 #
 # `hang` simulates a provider that never answers: it sleeps for the timeout it was given, then
 # raises Llm::TimeoutError, so the wall-clock budget is real. For an instant timeout, use
-# `fail_with(Llm::TimeoutError)`. `always_respond_with` sets the step used once the queue is empty;
+# `fail_with(Llm::TimeoutError)`. `respond_after(seconds, data)` answers after a delay, like a slow
+# provider; when the delay is longer than the timeout it was given, it waits out the timeout and
+# raises Llm::TimeoutError instead. `always_respond_with` sets the step used once the queue is empty;
 # `respond_by { |payload| data }` does the same with an answer computed from each payload. Pass
 # `usage: { input_tokens:, output_tokens: }` to any respond step to report token usage.
 class FakeLlmAdapter
@@ -42,6 +44,11 @@ class FakeLlmAdapter
     self
   end
 
+  def respond_after(seconds, data = nil, usage: nil, **output)
+    @script << [ :respond_after, [ seconds, data || output ], usage ]
+    self
+  end
+
   def fail_with(error)
     @script << [ :fail, error ]
     self
@@ -59,11 +66,22 @@ class FakeLlmAdapter
     case kind
     when :respond then response(value, usage)
     when :respond_by then response(value.call(payload), usage)
+    when :respond_after then respond_after_delay(*value, usage, timeout)
     when :fail then raise value
     when :hang
       sleep timeout
       raise Llm::TimeoutError
     end
+  end
+
+  def respond_after_delay(seconds, data, usage, timeout)
+    if seconds > timeout
+      sleep timeout
+      raise Llm::TimeoutError
+    end
+
+    sleep seconds
+    response(data, usage)
   end
 
   # Usage is passed only when scripted, so specs that don't need it don't depend on it.

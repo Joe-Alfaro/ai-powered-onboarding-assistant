@@ -45,6 +45,7 @@ interface ChatReply {
   actions?: string[]
   assessment?: Record<string, unknown> | null
   scheduling?: Record<string, unknown> | null
+  choices?: unknown[]
 }
 
 // The 200 body of POST /chat/messages (api/spec/requests/chat_messages_spec.rb).
@@ -55,6 +56,7 @@ function chatReply({
   actions = [],
   assessment = null,
   scheduling = null,
+  choices = [],
 }: ChatReply) {
   return jsonResponse(200, {
     reply,
@@ -63,6 +65,7 @@ function chatReply({
     actions,
     assessment,
     scheduling,
+    choices,
   })
 }
 

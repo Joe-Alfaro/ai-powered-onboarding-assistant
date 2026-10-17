@@ -32,6 +32,26 @@ RSpec.describe FakeLlmAdapter do
     expect(adapter.timeouts).to eq([ 0.2 ])
   end
 
+  it "answers after the scripted delay when it is shorter than the timeout" do
+    adapter = described_class.new.respond_after(0.2, LlmHelpers::STRUCTURED_REPLY)
+
+    response = nil
+    elapsed = elapsed_seconds { response = adapter.complete(payload, timeout: 1) }
+
+    expect(elapsed).to be >= 0.2
+    expect(response.data).to eq(LlmHelpers::STRUCTURED_REPLY.deep_stringify_keys)
+  end
+
+  it "times out instead of answering when the scripted delay is longer than the timeout" do
+    adapter = described_class.new.respond_after(5, LlmHelpers::STRUCTURED_REPLY)
+
+    elapsed = elapsed_seconds do
+      expect { adapter.complete(payload, timeout: 0.2) }.to raise_error(Llm::TimeoutError)
+    end
+
+    expect(elapsed).to be_between(0.2, 1)
+  end
+
   it "falls back to the default response once the queue is empty" do
     adapter = described_class.new.always_respond_with(LlmHelpers::STRUCTURED_REPLY)
 
