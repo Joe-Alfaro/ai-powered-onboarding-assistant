@@ -1,7 +1,9 @@
 module Llm
   # The provider-neutral entry point for LLM calls. Each call gets a 6 s client timeout, and a
   # timeout, 5xx, 429 or connection failure is retried once on LLM_FALLBACK_PROVIDER when one is
-  # set, inside an overall budget that keeps the failure path under R16's 10 s.
+  # set, inside an overall budget that keeps the failure path under R16's 10 s. A caller making
+  # several calls for one request passes its own `deadline` (a monotonic clock reading), and no
+  # call runs past it.
   class Client
     TIMEOUT_SECONDS = 6
     # Primary plus fallback, leaving about a second for the rest of the request.
@@ -24,24 +26,31 @@ module Llm
       @fallback = fallback
     end
 
-    def complete(payload)
+    def complete(payload, deadline: nil)
       raise ArgumentError, "expected an Llm::Payload from Llm::PayloadBuilder" unless payload.is_a?(Payload)
 
-      started = now
+      deadline = [ deadline, self.class.now + BUDGET_SECONDS ].compact.min
       begin
-        @primary.complete(payload, timeout: TIMEOUT_SECONDS)
+        @primary.complete(payload, timeout: timeout_until(deadline))
       rescue Error => error
-        remaining = BUDGET_SECONDS - (now - started)
+        remaining = deadline - self.class.now
         raise unless @fallback && error.fallback? && remaining >= MIN_FALLBACK_SECONDS
 
         @fallback.complete(payload, timeout: [ TIMEOUT_SECONDS, remaining ].min)
       end
     end
 
+    def self.now
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
     private
 
-    def now
-      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    def timeout_until(deadline)
+      remaining = deadline - self.class.now
+      raise TimeoutError unless remaining.positive?
+
+      [ TIMEOUT_SECONDS, remaining ].min
     end
   end
 end

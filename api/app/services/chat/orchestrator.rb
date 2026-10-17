@@ -3,7 +3,9 @@ module Chat
   # assessment fields and reply, validated against the intent list and the assessment schema and
   # retried once with the reasons; then the intent's handler, the reply guard, and saving the
   # turn, the draft and, once complete, the assessment. Consent is checked before every LLM call
-  # (R13). LLM failures other than an unreadable answer propagate as Llm::Error.
+  # (R13). LLM failures other than an unreadable answer propagate as Llm::Error. Every LLM call for
+  # one message, the retry and the fallback provider included, fits one deadline (R16). A chosen
+  # reschedule or cancel choice skips the LLM and goes straight to its handler (R36).
   class Orchestrator
     HANDLERS = {
       "provide-details" => Handlers::ProvideDetails,
@@ -13,6 +15,11 @@ module Chat
       "out-of-scope" => Handlers::OutOfScope
     }.freeze
     LLM_ATTEMPTS = 2
+    # The whole message's LLM budget, leaving time for the rest of the request under R16's 10 s.
+    DEADLINE_SECONDS = 8.5
+    # Below this, another attempt is too short to be worth making.
+    MIN_ATTEMPT_SECONDS = 1
+    CHOICE_INTENT = "request-reschedule".freeze
     # Longer messages are cut before they are stored or sent, which bounds cost and latency (R3).
     MAX_MESSAGE_LENGTH = 4_000
     # Earlier messages sent with each call, as user and assistant pairs.
@@ -28,22 +35,23 @@ module Chat
       @llm_client = llm_client
     end
 
-    def handle(message:, booking_id: nil, slot_id: nil)
+    def handle(message:, booking_id: nil, slot_id: nil, cancel: false)
       text = clean(message)
       return Result.new(reply: EMPTY_MESSAGE_REPLY) if text.blank?
 
       conversation = Conversation.for_user(user_id)
-      output = classify(conversation, text)
+      choice = { booking_id: booking_id, slot_id: slot_id, cancel: cancel }
+      output = choice?(choice) ? chosen : classify(conversation, text)
       return respond_with_fallback(conversation, text) unless output
 
-      context = Handlers::Context.new(user_id: user_id, draft: conversation.draft, fields: output.fields,
-                                      llm_reply: output.reply, booking_id: booking_id, slot_id: slot_id)
+      context = Handlers::Context.new(user_id: user_id, message: text, draft: conversation.draft, fields: output.fields,
+                                      llm_reply: output.reply, **choice)
       outcome = HANDLERS.fetch(output.intent).new(context).call
       reply = ReplyGuard.call(llm_reply: outcome.llm_reply, template: outcome.template)
       assessment = record(conversation, text, reply, output.intent, outcome.draft)
 
       Result.new(reply: reply, intent: output.intent, trigger: outcome.trigger, assessment: assessment,
-                 scheduling: outcome.scheduling)
+                 scheduling: outcome.scheduling, choices: outcome.choices)
     end
 
     private
@@ -56,11 +64,26 @@ module Chat
       message.dup.force_encoding(Encoding::UTF_8).scrub("").gsub(CONTROL_CHARACTERS, "").strip[0, MAX_MESSAGE_LENGTH]
     end
 
-    # The validated answer, or nil after two invalid ones.
+    def choice?(choice)
+      choice[:booking_id].present? && (choice[:slot_id].present? || choice[:cancel])
+    end
+
+    # A button press is unambiguous, so it needs no LLM and works while the LLM is down (R16).
+    def chosen
+      raise ConsentWithdrawn if Consent::Ledger.withdrawn?(user_id)
+
+      ResponseValidator::Output.new(intent: CHOICE_INTENT, fields: {}, reply: nil)
+    end
+
+    # The validated answer, or nil after two invalid ones or when too little time is left for
+    # another attempt.
     def classify(conversation, text)
+      deadline = Llm::Client.now + DEADLINE_SECONDS
       errors = nil
       LLM_ATTEMPTS.times do
-        output, errors = attempt(conversation, text, errors)
+        return nil if deadline - Llm::Client.now < MIN_ATTEMPT_SECONDS
+
+        output, errors = attempt(conversation, text, errors, deadline)
         return output if output
       end
       nil
@@ -68,10 +91,10 @@ module Chat
       nil
     end
 
-    def attempt(conversation, text, retry_errors)
+    def attempt(conversation, text, retry_errors, deadline)
       raise ConsentWithdrawn if Consent::Ledger.withdrawn?(user_id)
 
-      ResponseValidator.call(llm_client.complete(payload(conversation, text, retry_errors)).data)
+      ResponseValidator.call(llm_client.complete(payload(conversation, text, retry_errors), deadline: deadline).data)
     rescue Llm::InvalidResponseError
       [ nil, [ "the answer did not follow the response schema" ] ]
     end

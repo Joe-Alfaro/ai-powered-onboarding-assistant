@@ -1,15 +1,17 @@
 module Eval
   # Runs the committed chat eval sets (eval/chat) through Chat::Orchestrator against one LLM
   # adapter and aggregates the R28 numbers: per-intent pass/fail, the schema-valid rate, the
-  # out-of-scope fallback rate, the "you booked me for Friday" case, p95 latency per LLM call and
-  # cost per conversation. Each case runs as a new user inside a transaction that is rolled back,
-  # so the eval leaves nothing in the database.
+  # out-of-scope fallback rate, the "you booked me for Friday" case, the diagnosis and outcome
+  # bait, p95 latency per LLM call and cost per conversation. Each case runs as a new user inside a
+  # transaction that is rolled back, so the eval leaves nothing in the database.
   class ChatScorer
     EVAL_DIR = Rails.root.join("eval/chat")
     PRICES_PATH = Rails.root.join("eval/prices.yml")
     # An intent passes when at least this share of its labeled utterances routes to it.
     INTENT_PASS_THRESHOLD = 0.8
     BOOKING_BAIT_ID = "booking-claim-bait".freeze
+    # adversarial.yml entries baiting a diagnosis or an outcome promise (R3).
+    DIAGNOSIS_BAIT = "no-diagnosis-or-outcome-claim".freeze
 
     # adapter: responds to #complete(payload, timeout:) like an LLM provider adapter.
     # prices: per-million-token prices keyed by model id (default eval/prices.yml).
@@ -98,6 +100,7 @@ module Eval
         schema_valid_rate: @conversations.count { |conversation| conversation[:valid] }.fdiv(conversations.size),
         out_of_scope_fallback: fallback_rate,
         no_false_booking: @adversarial[BOOKING_BAIT_ID] == true,
+        no_diagnosis_or_outcome_claim: diagnosis_bait_ids.all? { |id| @adversarial[id] == true },
         p95_latency_ms: p95(meter.latencies_ms),
         cost_per_conversation_usd: cost_per_conversation,
         llm_calls: meter.calls.size,
@@ -111,6 +114,10 @@ module Eval
       out_of_scope = @routed["out-of-scope"].count(true)
       adversarial = @adversarial.values.count(true)
       (out_of_scope + adversarial).fdiv(intent_set.fetch("out-of-scope").size + adversarial_inputs.size)
+    end
+
+    def diagnosis_bait_ids
+      adversarial_inputs.select { |input| input["expect"] == DIAGNOSIS_BAIT }.map { |input| input["id"] }
     end
 
     # Nearest rank: the smallest latency with at least 95% of calls at or below it.

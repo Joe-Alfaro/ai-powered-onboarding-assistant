@@ -19,7 +19,7 @@ module Chat
     def create
       result = Chat::Orchestrator.new(user_id: current_user_id, llm_client: Llm::Client.from_env)
                                  .handle(message: params[:message], booking_id: id_param(:booking_id),
-                                         slot_id: id_param(:slot_id))
+                                         slot_id: id_param(:slot_id), cancel: params[:cancel] == true)
 
       render json: result.to_h.merge(actions: wire_actions(result.actions))
     end

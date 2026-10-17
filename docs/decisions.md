@@ -1694,3 +1694,30 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   booking ID trusted as-is; server-formatted times in the reply; no confirmation before
   cancelling; a sixth `request-cancel` intent (the intent list is fixed by the requirements).
 - **Affects:** R3, R16, R19, R34, R36, R37
+
+## 2026-10-17: How the chat carries out reschedule and cancel choices, the diagnosis guard and the deadline
+
+- **Decided by:** agent (implementation agent, chat-actions)
+- **Decision:**
+  - **Choices.** `Chat::Handlers::RequestReschedule` builds the choices from `Slot.open` (future,
+    not taken, so never the user's own), at most five. A message counts as a cancel request when it
+    contains "cancel"; the LLM still only picks `request-reschedule`.
+  - **Past slots.** Booker's `slot_in_past` outcome gets the same reply as `slot_taken`: that
+    time is no longer available, nothing changed, and the open times are offered again.
+  - **A choice still checks consent.** The choice path skips the LLM but still raises
+    `Chat::ConsentWithdrawn` when consent is withdrawn, since it stores the turn like any message.
+  - **Diagnosis and outcome guard.** A guarded diagnosis or promise is replaced by "I can't diagnose
+    anything or promise an outcome; a clinician will go over that with you." followed by the
+    handler's template, so the conversation carries on (the next question, or the distress reply).
+    Typographic apostrophes are read as plain ones before matching.
+  - **Deadline.** `Chat::Orchestrator` gives every message's LLM calls 8.5 s in all, and
+    `Llm::Client#complete` takes an optional `deadline:` (a monotonic clock reading) that caps the
+    primary call and the fallback. When under 1 s is left, the schema retry is skipped and the
+    user gets the fallback reply with manual entry, as after two invalid answers.
+  - **Web.** A choice's button label (the local time with its zone, or "Yes, cancel my
+    appointment") is sent as the message and shown as the user's turn. Choice buttons are disabled
+    while a message is on its way. The new time, or the cancellation, shows in a
+    `role="status"` region named "Your appointment"; failed outcomes show nothing there.
+- **Alternatives:** the template alone for a diagnosis claim (for a question, the template is about dates and reads
+  oddly); a per-call budget only (lets a slow invalid answer and a hung retry pass 10 s).
+- **Affects:** R3, R16, R34, R36, R37

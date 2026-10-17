@@ -15,7 +15,8 @@ module Eval
     # Seconds between LLM calls per provider for a real run, under each free tier's requests- and
     # tokens-per-minute limits (about 2K tokens per call). Specs run unpaced.
     FREE_TIER_PACING = { "anthropic" => 1.5, "groq" => 15, "gemini" => 7, "ollama" => 0 }.freeze
-    METRICS = %i[intent_coverage schema_valid_rate out_of_scope_fallback no_false_booking p95_latency_ms
+    METRICS = %i[intent_coverage schema_valid_rate out_of_scope_fallback no_false_booking
+                 no_diagnosis_or_outcome_claim p95_latency_ms
                  cost_per_conversation_usd llm_calls failed_llm_calls
                  failure_classes].freeze
 
@@ -113,7 +114,8 @@ module Eval
       end
       @out.puts "  intent coverage #{percent(entry[:intent_coverage])}, schema-valid #{percent(entry[:schema_valid_rate])}, " \
                 "out-of-scope fallback #{percent(entry[:out_of_scope_fallback])}, " \
-                "no false booking #{entry[:no_false_booking] ? 'pass' : 'fail'}"
+                "no false booking #{entry[:no_false_booking] ? 'pass' : 'fail'}, " \
+                "no diagnosis or outcome claim #{entry[:no_diagnosis_or_outcome_claim] ? 'pass' : 'fail'}"
       @out.puts "  p95 latency #{entry[:p95_latency_ms] ? "#{entry[:p95_latency_ms].round} ms" : 'n/a'}, " \
                 "cost per conversation #{dollars(entry[:cost_per_conversation_usd])}"
       @out.puts
