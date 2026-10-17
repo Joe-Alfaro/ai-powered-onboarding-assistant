@@ -13,6 +13,7 @@ module Scheduling
     def book(slot_id:)
       slot = Slot.find_by(id: slot_id)
       return Result.new(outcome: :not_found) unless slot
+      return Result.new(outcome: :slot_in_past, slot: slot) if slot.past?
 
       existing = own_bookings.active.first
       return Result.new(outcome: :booking_exists, booking: existing, slot: existing.slot) if existing
@@ -29,6 +30,7 @@ module Scheduling
         booking = own_bookings.active.lock.find_by(id: booking_id)
         new_slot = Slot.find_by(id: slot_id)
         next Result.new(outcome: :not_found) unless booking && new_slot
+        next Result.new(outcome: :slot_in_past, slot: new_slot) if new_slot.past?
 
         previous_slot = booking.slot
         booking.update!(slot: new_slot)

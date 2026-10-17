@@ -7,7 +7,8 @@ class BookingsController < ApplicationController
   ERRORS = {
     not_found: [ 404, "not_found", "We couldn't find that." ],
     slot_taken: [ 409, "slot_taken", "That slot is already booked. Please pick another time." ],
-    booking_exists: [ 409, "booking_exists", "You already have a booking. Reschedule or cancel it instead." ]
+    booking_exists: [ 409, "booking_exists", "You already have a booking. Reschedule or cancel it instead." ],
+    slot_in_past: [ 422, "slot_in_past", "That time has already passed. Please pick another time." ]
   }.freeze
 
   def index

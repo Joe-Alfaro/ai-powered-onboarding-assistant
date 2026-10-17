@@ -1626,3 +1626,24 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   versions); counting thresholds in the engine only, with no units in the table; testing bin/setup
   only by reading its source.
 - **Affects:** R9, R12, R17, R30, R32
+
+## 2026-10-17: Hardening implementation choices
+
+- **Decided by:** agent (implementation agent, hardening)
+- **Decision:**
+  - **Development recurring tasks:** `config/initializers/development_recurring_tasks.rb` runs the
+    `development` entries of `config/recurring.yml` from the dev server (`bin/rails server` only),
+    one thread per task that enqueues the job at each Fugit `next_time`. `fugit` is now a direct
+    Gemfile dependency, since Solid Queue only loads it lazily.
+  - **Trigger counts:** upload failures and distress classifications are counted for the engine's
+    lifetime (a later success doesn't reset them). With the committed values of 1 this matches the
+    earlier fire-on-first behavior. The existing `longPauseMs` option stays and wins over
+    `thresholds['long-pause']`, which wins over `NEXT_PUBLIC_LONG_PAUSE_SECONDS`, which wins over
+    the table.
+  - **Consent version error:** an unknown version is 422 `validation_failed` with a message asking
+    the user to reload, raised in `ConsentsController` before `Consent::Ledger.grant!`.
+  - **bin/setup:** writes `DB_PORT` into a newly generated `api/.env` only when `DB_PORT` is set;
+    otherwise the `.env.example` default (5433) stays.
+- **Alternatives:** switching development to Solid Queue (needs a queue database locally);
+  resetting the failure count on a successful upload.
+- **Affects:** R9, R12, R17, R32

@@ -84,6 +84,10 @@ if [ ! -f api/.env ]; then
   cp api/.env.example api/.env
   # Unset, so the local database settings in config/database.yml apply.
   unset_env api/.env DATABASE_URL
+  # A DB_PORT in the environment is the port Postgres starts on below, so point the API at it too.
+  if [ -n "${DB_PORT:-}" ]; then
+    set_env api/.env DB_PORT "$DB_PORT"
+  fi
   set_env api/.env SUPABASE_URL "$supabase_url"
   set_env api/.env SUPABASE_JWKS_URL "$supabase_url/auth/v1/.well-known/jwks.json"
   set_env api/.env SUPABASE_SERVICE_ROLE_KEY "$service_role_key"

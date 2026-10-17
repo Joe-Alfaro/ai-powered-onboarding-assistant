@@ -358,6 +358,7 @@ DEPENDENCIES
   bootsnap
   debug
   dotenv
+  fugit (~> 1.11)
   json_schemer (~> 2.4)
   jwt (~> 3.3)
   lograge (~> 0.15.1)

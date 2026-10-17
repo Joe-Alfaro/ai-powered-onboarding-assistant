@@ -1,6 +1,9 @@
-import { longPauseThresholdMs, type TriggerId } from './triggers'
+import { longPauseThresholdMs, TRIGGERS, type TriggerId } from './triggers'
 
 export interface TriggerEngineOptions {
+  // Overrides the trigger table, each in that trigger's unit.
+  thresholds?: Partial<Record<TriggerId, number>>
+  // Overrides the long-pause threshold in milliseconds.
   longPauseMs?: number
 }
 
@@ -29,10 +32,23 @@ export interface TriggerEngine {
 const ACTIVITY_EVENTS = ['keydown', 'input', 'focusin', 'pointerdown'] as const
 
 export function createTriggerEngine({
-  longPauseMs = longPauseThresholdMs(),
+  thresholds = {},
+  longPauseMs,
 }: TriggerEngineOptions = {}): TriggerEngine {
+  const pauseMs =
+    longPauseMs ??
+    (thresholds['long-pause'] === undefined
+      ? longPauseThresholdMs()
+      : thresholds['long-pause'] * 1_000)
+  const uploadFailureLimit =
+    thresholds['upload-failure'] ?? TRIGGERS['upload-failure'].threshold.value
+  const distressLimit =
+    thresholds['high-stress-intent'] ??
+    TRIGGERS['high-stress-intent'].threshold.value
   const listeners = new Set<() => void>()
   let activeTriggers: readonly TriggerId[] = []
+  let uploadFailures = 0
+  let distressClassifications = 0
   let pauseTimer: ReturnType<typeof setTimeout> | undefined
   let running = false
 
@@ -53,7 +69,7 @@ export function createTriggerEngine({
   function restartPauseTimer() {
     clearPauseTimer()
     if (!running || document.visibilityState === 'hidden') return
-    pauseTimer = setTimeout(() => activate('long-pause'), longPauseMs)
+    pauseTimer = setTimeout(() => activate('long-pause'), pauseMs)
   }
 
   return {
@@ -77,11 +93,17 @@ export function createTriggerEngine({
     },
 
     reportUpload({ ok }) {
-      if (!ok) activate('upload-failure')
+      if (ok) return
+      uploadFailures += 1
+      if (uploadFailures >= uploadFailureLimit) activate('upload-failure')
     },
 
     reportChatResponse({ trigger }) {
-      if (trigger === 'high-stress-intent') activate('high-stress-intent')
+      if (trigger !== 'high-stress-intent') return
+      distressClassifications += 1
+      if (distressClassifications >= distressLimit) {
+        activate('high-stress-intent')
+      }
     },
 
     active() {

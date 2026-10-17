@@ -18,6 +18,8 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 # Use the database-backed adapters for Rails.cache and Active Job
 gem "solid_cache"
 gem "solid_queue"
+# Parses recurring.yml schedules, for the development scheduler (solid_queue loads it only lazily).
+gem "fugit", "~> 1.11"
 
 # Validates LLM output and assessment records against app/schemas/*.json (R2)
 gem "json_schemer", "~> 2.4"

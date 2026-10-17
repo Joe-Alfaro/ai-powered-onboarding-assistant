@@ -231,8 +231,9 @@ run `bin/setup` again.
 - **Sign-in fails with "That email and password do not match".** Run `cd api && bin/rails db:seed`
   to create the demo users, and check that `supabase status` shows the stack running.
 - **The seed fails with "Supabase Auth returned HTTP 403".** Another checkout's Supabase stack is
-  running under the same project id, with a different signing key. Run `supabase stop` in that
-  checkout, then `bin/setup` again.
+  running under the same project id, with a different signing key. Stop it with
+  `supabase stop --project-id onboarding-assistant` (this works from any directory, even if that
+  checkout is gone), then run `bin/setup` again.
 - **Chat says the assistant is unavailable right now.** Add an LLM key to `api/.env` (step 3) and restart
   the API.
 

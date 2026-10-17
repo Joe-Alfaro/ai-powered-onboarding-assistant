@@ -29,7 +29,7 @@ gates:
     - export PATH="/opt/homebrew/opt/ruby/bin:/opt/homebrew/lib/ruby/gems/3.4.0/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
     - docker run -d --rm --name "$CI_POSTGRES_NAME" --label ci.job="$CI_JOB_ID"
       -e POSTGRES_USER="$DB_USER" -e POSTGRES_PASSWORD="$DB_PASSWORD"
-      -p "127.0.0.1:$DB_PORT:5432" postgres:17 > /dev/null
+      -p "127.0.0.1:$DB_PORT:5432" postgres:17.11 > /dev/null
     # Wait up to 60 s for Postgres to accept connections.
     - i=0; until docker exec "$CI_POSTGRES_NAME" pg_isready -q -U "$DB_USER"; do i=$((i+1)); [ "$i" -lt 30 ] || exit 1; sleep 2; done
   script:

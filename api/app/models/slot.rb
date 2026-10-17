@@ -9,6 +9,11 @@ class Slot < ApplicationRecord
   # Future slots with no active booking, soonest first (R6).
   scope :open, -> { where(starts_at: Time.current..).where.not(id: Booking.active.select(:slot_id)).order(:starts_at) }
 
+  # A slot that has started can't be booked, even before it ends.
+  def past?
+    starts_at <= Time.current
+  end
+
   def summary
     { id: id, starts_at: starts_at.utc.iso8601, ends_at: ends_at.utc.iso8601 }
   end

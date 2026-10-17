@@ -18,3 +18,12 @@ production:
     class: Documents::PurgeExpiredUploadsJob
     queue: default
     schedule: every hour
+
+# Development runs jobs on the :async adapter, which ignores this file, so
+# config/initializers/development_recurring_tasks.rb runs these entries from the dev server.
+development:
+  # R17: same purge as production, so a local demo doesn't keep abandoned images.
+  purge_expired_document_uploads:
+    class: Documents::PurgeExpiredUploadsJob
+    queue: default
+    schedule: every hour

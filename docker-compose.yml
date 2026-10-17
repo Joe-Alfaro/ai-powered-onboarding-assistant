@@ -2,7 +2,7 @@
 # Postgres already on 5432; override with DB_PORT.
 services:
   postgres:
-    image: postgres:17
+    image: postgres:17.11
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
