@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useApiClient } from '@/api/useApiClient'
 import { Scheduler } from '@/schedule/Scheduler'
 
@@ -9,7 +10,14 @@ export default function SchedulePage() {
   return (
     <>
       <h1>Schedule a call</h1>
-      <Scheduler api={api} />
+      <Scheduler
+        api={api}
+        next={
+          <p>
+            <Link href="/done">Continue to the summary</Link>
+          </p>
+        }
+      />
     </>
   )
 }

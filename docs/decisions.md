@@ -1420,3 +1420,83 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   takes an extra hop through the web service, and the architecture has the browser call the API
   directly); allowing any origin (exposes the API to every site).
 - **Affects:** R30, R32
+
+## 2026-10-16: End-to-end test harness
+
+- **Decided by:** agent (test agent, e2e)
+- **Decision:**
+  - **Fake LLM at the boundary:** `web/e2e/support/fake-llm.mjs` is a dependency-free Node
+    OpenAI-compatible server. The API reaches it through its existing Ollama adapter
+    (`LLM_PROVIDER=ollama`, `OLLAMA_BASE_URL`), so no app code knows about tests. It answers from
+    keyword rules on the latest user message, and `POST /__control` switches it to timeout, 5xx or
+    429 for the R16 tests. Real provider keys are set empty for the API process, so a local
+    `api/.env` can't supply them (dotenv doesn't override set variables).
+  - **Stack:** Playwright's `webServer` starts the fake LLM, the API (development mode, its own
+    `api_e2e` database dropped, reloaded and seeded with the real seed each run) and a production
+    `next build` + `next start`, so no dev overlay stands in for the app's error pages (R30). The
+    local Supabase stack and Postgres are started beforehand, not by the tests. Fixed ports
+    3410-3412 keep clear of the dev servers.
+  - **One worker, Chromium only:** the tests share one database and the fake LLM's mode, and the
+    host is shared.
+  - **Users:** each test creates its own confirmed user through the Supabase Auth admin API, and
+    sets up steps it isn't about (assessment, identity) through the API, so tests are independent
+    and short.
+  - **One happy-path walk carries R9 and R15:** the full flow asserts no supportive content on
+    every step and, at the end, that no synthetic value reached the browser console, instead of
+    walking the flow three times. A harness spec checks that the console capture does see logged
+    values and that chat calls reach the fake LLM, so neither passes vacuously.
+  - **Moving on from a step:** the tests expect a control named "Continue" (a link or button in
+    the main region) after the assessment completes and after a booking. GET /onboarding sends a
+    returning user to the right step, but nothing on the chat or schedule page leads forward.
+  - **Long-pause threshold:** built at 20 s (`NEXT_PUBLIC_LONG_PAUSE_SECONDS`), short enough for the
+    test to wait out and long enough that no happy-path step idles that long, OCR included.
+  - **`bin/check-env` skips `web/e2e/`:** the harness sets the stack's environment itself;
+    it isn't app configuration.
+  - **CI recommendation:** keep Playwright out of the MR `gates` job for now and run `npm run e2e`
+    locally before merging changes that touch the flow. The shell runner would have to run the
+    Supabase CLI stack (about a dozen containers, a fixed port range shared by every project on
+    the host), a production Next build and the API at once, which makes the one shared job much
+    slower and exposes it to port clashes. If it is added later, use a separate `e2e` job, still
+    `interruptible: true`, `retry: 0` and `timeout: 30m`, that starts and stops its own Supabase
+    stack under a dedicated `project_id` and ports.
+- **Alternatives:** an env-selected fake adapter in the API (test code in the app); `next dev`
+  (slow first compiles, and its overlay replaces error pages); seeding users with the demo
+  accounts (tests would share bookings and state); a separate R9 walk.
+- **Affects:** R7, R8, R9, R10, R15, R16, R30, R34, R37
+
+## 2026-10-16: Playwright runs locally, not in CI
+
+- **Decided by:** orchestrator, on the e2e test agent's recommendation; recorded by agent
+  (implementation agent, e2e)
+- **Replaces:** "Playwright runs in the same pipeline" under Quality gates in ARCHITECTURE.md.
+- **Decision:** the Playwright suite stays out of `bin/gates`, the pre-push hook and the MR
+  pipeline. It runs locally with `cd web && npm run e2e` against the local Supabase stack, before
+  merging changes that touch the flow. The README test section says so.
+- **Alternatives:** a step in the `gates` job; a separate `e2e` job that starts and stops its own
+  Supabase stack under a dedicated `project_id` and ports.
+- **Tradeoffs:** the shell runner is shared and runs one job at a time on the user's Mac. The full
+  Supabase stack (about a dozen containers on a fixed port range), a production Next build and the
+  API would make every pipeline much slower, risk port clashes with other projects, and go against
+  the GitLab server-safety rules in `CLAUDE.md`. The cost is that a broken flow can merge if
+  nobody runs the suite; the Jest and RSpec gates still cover each step on its own.
+- **Affects:** R34, and every requirement the end-to-end tests check
+
+## 2026-10-16: Moving on from the chat and schedule steps
+
+- **Decided by:** agent (implementation agent, e2e)
+- **Decision:**
+  - The chat page shows a "Continue to your ID" link under the assessment summary once the
+    assessment is saved, and the schedule page shows "Continue to the summary" once a call is
+    booked. Links, not buttons, because they only navigate. The schedule link is hidden while a
+    reschedule or cancel is open, so the user finishes that first. "Assessment complete" sits in
+    a `role="status"` region so the change is announced.
+  - Focus isn't moved to the link when it appears: the user may still be typing in the chat, and
+    the link follows the status text in tab order.
+  - On arriving at a new step, `AppShell` moves focus to the main landmark (already
+    `tabIndex={-1}` for the skip link) and puts "Step N of 5: <label>" in a visually hidden
+    `role="status"` region in the header. The first step shown after a page load isn't announced,
+    and moves within a step (such as `/identity` to `/identity/manual`) aren't either.
+- **Alternatives:** moving focus to the new link; focusing each page's `h1` (needs a ref or
+  `tabIndex` on every page); relying on Next.js's route announcer, which reads the page title,
+  and the title is the same on every step.
+- **Affects:** R34

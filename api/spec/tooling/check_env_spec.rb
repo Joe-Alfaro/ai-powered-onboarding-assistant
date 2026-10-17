@@ -58,6 +58,8 @@ RSpec.describe "bin/check-env" do
       # Not app code: never scanned.
       "api/spec/widget_spec.rb" => "ENV[\"SPEC_ONLY_SETTING\"] = \"x\"\n",
       "web/src/api.test.ts" => "process.env.TEST_ONLY_SETTING = 'x'\n",
+      "web/playwright.config.ts" => "const port = process.env.E2E_ONLY_SETTING\n",
+      "web/e2e/support/stack.ts" => "process.env.E2E_HARNESS_SETTING\n",
       "web/node_modules/some-lib/index.js" => "module.exports = process.env.LIBRARY_SETTING\n",
       "web/.next/server/chunk.js" => "process.env.BUILD_OUTPUT_SETTING\n"
     }
@@ -135,7 +137,8 @@ RSpec.describe "bin/check-env" do
     output, status = check(files)
 
     expect(status).to be_success, output
-    %w[SPEC_ONLY_SETTING TEST_ONLY_SETTING LIBRARY_SETTING BUILD_OUTPUT_SETTING].each do |name|
+    %w[SPEC_ONLY_SETTING TEST_ONLY_SETTING E2E_ONLY_SETTING E2E_HARNESS_SETTING LIBRARY_SETTING
+       BUILD_OUTPUT_SETTING].each do |name|
       expect(output).not_to include(name)
     end
   end

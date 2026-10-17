@@ -1,5 +1,7 @@
+'use client'
+
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { STEPS, type StepId } from './steps'
 
 interface AppShellProps {
@@ -45,8 +47,37 @@ function StepItem({
   )
 }
 
+// Moving to a new step puts focus at the top of the main content and names
+// the step in a live region, so keyboard and screen reader users start the
+// new step where sighted users do (R34). The first step shown isn't
+// announced: the page load already is.
+function useStepArrival(currentStep: StepId | null) {
+  const main = useRef<HTMLElement>(null)
+  const [shownStep, setShownStep] = useState(currentStep)
+  const [announcement, setAnnouncement] = useState('')
+  const index = STEPS.findIndex(({ id }) => id === currentStep)
+
+  // Updated while rendering, the way React derives state from a changed prop.
+  if (currentStep !== shownStep) {
+    setShownStep(currentStep)
+    // Cleared outside the flow, so coming back to the same step is announced.
+    setAnnouncement(
+      index === -1
+        ? ''
+        : `Step ${index + 1} of ${STEPS.length}: ${STEPS[index].label}`,
+    )
+  }
+
+  useEffect(() => {
+    if (announcement) main.current?.focus()
+  }, [announcement])
+
+  return { main, announcement }
+}
+
 export function AppShell({ currentStep, onSignOut, children }: AppShellProps) {
   const currentIndex = STEPS.findIndex(({ id }) => id === currentStep)
+  const { main, announcement } = useStepArrival(currentStep)
 
   function stateOf(index: number) {
     if (currentIndex === -1 || index > currentIndex) return 'upcoming'
@@ -73,8 +104,11 @@ export function AppShell({ currentStep, onSignOut, children }: AppShellProps) {
             Sign out
           </button>
         )}
+        <p role="status" className="visually-hidden">
+          {announcement}
+        </p>
       </header>
-      <main id={MAIN_ID} tabIndex={-1}>
+      <main id={MAIN_ID} ref={main} tabIndex={-1}>
         {children}
       </main>
     </>

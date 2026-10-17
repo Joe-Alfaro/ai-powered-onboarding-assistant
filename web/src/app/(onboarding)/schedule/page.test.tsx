@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { fakeSchedulingApi, slotAt } from '@/test-utils/schedulingApi'
 import {
@@ -70,6 +71,46 @@ describe('schedule page', () => {
     expect(api.requestsTo('GET', '/bookings')[0].authorization).toBe(
       'Bearer token-from-a-new-browser',
     )
+  })
+
+  it('R34: offers no way on until a call is booked', async () => {
+    fakeSchedulingApi({ slots: [MON_9AM] })
+
+    render(<SchedulePage />)
+    await screen.findByRole('radio', { name: MON_9AM_TEXT })
+
+    expect(
+      screen.queryByRole('link', { name: /^continue/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('R34: once a call is booked, links on to the summary', async () => {
+    const user = userEvent.setup()
+    fakeSchedulingApi({ slots: [MON_9AM] })
+
+    render(<SchedulePage />)
+    await user.click(await screen.findByRole('radio', { name: MON_9AM_TEXT }))
+    await user.click(screen.getByRole('button', { name: 'Book this time' }))
+
+    expect(
+      await screen.findByRole('link', { name: 'Continue to the summary' }),
+    ).toHaveAttribute('href', '/done')
+  })
+
+  it('R34: hides the way on while the booking is being changed', async () => {
+    const user = userEvent.setup()
+    fakeSchedulingApi({
+      slots: [MON_9AM],
+      booking: { id: 'booking-1', slotId: MON_9AM.id },
+    })
+
+    render(<SchedulePage />)
+    await screen.findByRole('link', { name: 'Continue to the summary' })
+    await user.click(screen.getByRole('button', { name: 'Reschedule' }))
+
+    expect(
+      screen.queryByRole('link', { name: /^continue/i }),
+    ).not.toBeInTheDocument()
   })
 
   it('R34: has no accessibility violations', async () => {

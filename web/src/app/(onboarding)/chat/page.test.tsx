@@ -313,6 +313,40 @@ describe('Chat step page', () => {
     })
   })
 
+  describe('moving on to the next step (R34)', () => {
+    it('offers no way on while the assessment is in progress', async () => {
+      fetchMock.mockResolvedValue(chatReply({ reply: 'How urgent is it?' }))
+      render(<ChatPage />)
+
+      await send('I cannot sleep')
+      await within(conversation()).findByText('How urgent is it?')
+
+      expect(
+        screen.queryByRole('link', { name: /^continue/i }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('announces the completed assessment and links on to the identity step, reachable by Tab', async () => {
+      fetchMock.mockResolvedValue(
+        chatReply({ reply: 'All set.', assessment: ASSESSMENT }),
+      )
+      render(<ChatPage />)
+
+      await send('Weekday evenings')
+
+      const next = await screen.findByRole('link', {
+        name: 'Continue to your ID',
+      })
+      expect(next).toHaveAttribute('href', '/identity')
+      expect(
+        screen.getByText('Assessment complete').closest('[role="status"]'),
+      ).not.toBeNull()
+      await user.tab()
+      await user.tab()
+      expect(next).toHaveFocus()
+    })
+  })
+
   describe('fallback replies (R3)', () => {
     it('R3: renders a fallback reply as a normal reply, not an error, and the conversation continues', async () => {
       fetchMock

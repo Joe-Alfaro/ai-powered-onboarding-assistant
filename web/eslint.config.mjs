@@ -13,12 +13,21 @@ const eslintConfig = defineConfig([
       'no-console': 'error',
     },
   },
+  {
+    // Playwright fixtures call their `use` argument, which isn't React's.
+    files: ['e2e/**/*.ts'],
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
+    },
+  },
   prettier,
   globalIgnores([
     '.next/**',
     'out/**',
     'build/**',
     'coverage/**',
+    'test-results/**',
+    'playwright-report/**',
     'next-env.d.ts',
   ]),
 ])

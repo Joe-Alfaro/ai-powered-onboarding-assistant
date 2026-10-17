@@ -1,6 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useId, useState, type FormEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react'
 import { ApiError, type ApiClient } from '@/api/client'
 import { ErrorNotice } from '@/api/ErrorNotice'
 import { formatLocalDateTime } from '@/time/formatLocalDateTime'
@@ -23,6 +30,8 @@ interface Booking {
 
 interface SchedulerProps {
   api: ApiClient
+  // Shown once a call is booked, such as a link on to the next step.
+  next?: ReactNode
 }
 
 type Mode = 'viewing' | 'rescheduling' | 'confirming-cancel'
@@ -44,7 +53,7 @@ function messageFor(error: ApiError) {
   return error.code === 'slot_taken' ? SLOT_TAKEN_MESSAGE : error.message
 }
 
-export function Scheduler({ api }: SchedulerProps) {
+export function Scheduler({ api, next }: SchedulerProps) {
   const id = useId()
   const [slots, setSlots] = useState<Slot[] | null>(null)
   const [booking, setBooking] = useState<Booking | null>(null)
@@ -199,6 +208,8 @@ export function Scheduler({ api }: SchedulerProps) {
           )}
         </section>
       )}
+
+      {booking && mode === 'viewing' && next}
 
       {showPicker &&
         (slots.length === 0 ? (
