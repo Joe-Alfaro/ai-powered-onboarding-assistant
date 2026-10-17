@@ -24,6 +24,10 @@ module Llm
         "#{@base_url.delete_suffix('/')}/v1/messages"
       end
 
+      def models_endpoint
+        "#{@base_url.delete_suffix('/')}/v1/models"
+      end
+
       def headers
         { "x-api-key" => @api_key, "anthropic-version" => API_VERSION }
       end

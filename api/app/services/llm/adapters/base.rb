@@ -14,6 +14,12 @@ module Llm
         Response.new(data: structured_output(body), provider: provider, model: model, usage: usage(body))
       end
 
+      # Lists the provider's models, a cheap call that spends no completion quota. The health
+      # check uses it to tell whether the provider is reachable and accepts the key (R31).
+      def list_models(timeout:)
+        send_request(Net::HTTP::Get.new(URI(models_endpoint), headers), timeout)
+      end
+
       private
 
       # Token counts in the provider's own field names; nil when the provider reports none.
@@ -25,16 +31,19 @@ module Llm
       end
 
       def post(body, timeout)
-        uri = URI(endpoint)
+        request = Net::HTTP::Post.new(URI(endpoint), headers.merge("Content-Type" => "application/json"))
+        request.body = body.to_json
+        send_request(request, timeout)
+      end
+
+      def send_request(request, timeout)
+        uri = request.uri
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = uri.scheme == "https"
         http.open_timeout = http.read_timeout = http.write_timeout = timeout
         http.max_retries = 0
         # Request and response bodies carry user text, so debug output stays off everywhere.
         http.set_debug_output(nil)
-
-        request = Net::HTTP::Post.new(uri, headers.merge("Content-Type" => "application/json"))
-        request.body = body.to_json
         parse(http.request(request))
       rescue Timeout::Error
         raise Llm::TimeoutError, "#{provider} did not answer within #{timeout} s"

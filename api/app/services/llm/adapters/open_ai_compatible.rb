@@ -19,6 +19,10 @@ module Llm
         "#{@base_url.delete_suffix('/')}/chat/completions"
       end
 
+      def models_endpoint
+        "#{@base_url.delete_suffix('/')}/models"
+      end
+
       def headers
         @api_key.present? ? { "Authorization" => "Bearer #{@api_key}" } : {}
       end

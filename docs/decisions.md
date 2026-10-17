@@ -1528,3 +1528,25 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   known object for storage (needs an object to exist); probing the fallback provider too
   (doubles provider calls for little signal).
 - **Affects:** R31
+
+## 2026-10-17: How the health probes bound their waits and reach providers
+
+- **Decided by:** agent (implementation agent, health-probes)
+- **Decision:**
+  - Every connect, read and process wait in a probe gives up after 1.2 s
+    (`Health::Check::PROBE_TIMEOUT_SECONDS`). Net::HTTP times the connect and the read separately,
+    so a probe whose connect and read both stall still reports down in about 2.4 s. The probes run
+    one after another, and three hanging reads take about 3.6 s, under the 6 s budget.
+  - The probes stay sequential instead of running in threads, so the database probe keeps using
+    the request's connection handling and no thread outlives a request.
+  - The storage probe reuses `Storage::Client` with a new `check_bucket` call and a per-client
+    timeout. The LLM probe builds the primary adapter with `Llm::Providers.adapter_from_env` and
+    calls a new `list_models` on it, so provider base URLs and auth headers live in one place.
+    Both read the environment on each call, not when the registry is built.
+  - The OCR probe spawns `tesseract --version` in its own process group and kills the group when
+    it overruns. OCR stays inside a `CachedProbe` like the other two.
+  - `Probes::NotConfigured` is removed, since nothing registers it any more.
+- **Alternatives:** a 2 s timeout per probe (three hangs reach 6 s); running probes in threads
+  (allows longer timeouts, but adds connection and thread handling to every ping); a separate HTTP
+  client for the probes (duplicates provider URLs and headers).
+- **Affects:** R31

@@ -5,16 +5,18 @@ module Health
   class Check
     # Storage, OCR and LLM probes call providers, so pings reuse a result for this long.
     PROVIDER_PROBE_TTL = 5.minutes
+    # Each connect, read or process wait gives up after this long, so a hanging dependency reads
+    # as down within 3 s and the three provider probes together stay under 6 s.
+    PROBE_TIMEOUT_SECONDS = 1.2
 
     # The app's registered probes. The database is checked on every ping, which also keeps
-    # Supabase from pausing an idle project. Storage, OCR and LLM start as NotConfigured (down)
-    # until their slices replace the placeholder with a real probe, kept inside a CachedProbe.
+    # Supabase from pausing an idle project.
     def self.probes
       @probes ||= {
         database: Probes::Database.new,
-        storage: CachedProbe.new(Probes::NotConfigured.new, ttl: PROVIDER_PROBE_TTL),
-        ocr: CachedProbe.new(Probes::NotConfigured.new, ttl: PROVIDER_PROBE_TTL),
-        llm: CachedProbe.new(Probes::NotConfigured.new, ttl: PROVIDER_PROBE_TTL)
+        storage: CachedProbe.new(Probes::Storage.new(timeout: PROBE_TIMEOUT_SECONDS), ttl: PROVIDER_PROBE_TTL),
+        ocr: CachedProbe.new(Probes::Ocr.new(timeout: PROBE_TIMEOUT_SECONDS), ttl: PROVIDER_PROBE_TTL),
+        llm: CachedProbe.new(Probes::Llm.new(timeout: PROBE_TIMEOUT_SECONDS), ttl: PROVIDER_PROBE_TTL)
       }
     end
 

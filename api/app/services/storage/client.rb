@@ -10,18 +10,26 @@ module Storage
 
     TIMEOUT_SECONDS = 10
 
-    def self.default
+    def self.default(timeout: TIMEOUT_SECONDS)
       new(
         url: "#{ENV.fetch("SUPABASE_URL")}/storage/v1",
         bucket: ENV.fetch("STORAGE_BUCKET"),
-        service_key: ENV.fetch("SUPABASE_SERVICE_ROLE_KEY")
+        service_key: ENV.fetch("SUPABASE_SERVICE_ROLE_KEY"),
+        timeout: timeout
       )
     end
 
-    def initialize(url:, bucket:, service_key:)
+    def initialize(url:, bucket:, service_key:, timeout: TIMEOUT_SECONDS)
       @url = url
       @bucket = bucket
       @service_key = service_key
+      @timeout = timeout
+    end
+
+    # Looks up the bucket's metadata, raising Error unless it exists and Storage answers (R31).
+    def check_bucket
+      expect_success(perform(Net::HTTP::Get.new(URI("#{@url}/bucket/#{escape(@bucket)}"))))
+      true
     end
 
     def upload(key, io, content_type:)
@@ -63,8 +71,8 @@ module Storage
     def perform(request)
       request["Authorization"] = "Bearer #{@service_key}"
       uri = request.uri
-      Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: TIMEOUT_SECONDS,
-                      read_timeout: TIMEOUT_SECONDS, write_timeout: TIMEOUT_SECONDS, max_retries: 0) do |http|
+      Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: @timeout,
+                      read_timeout: @timeout, write_timeout: @timeout, max_retries: 0) do |http|
         http.request(request)
       end
     rescue Timeout::Error, SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError => error
