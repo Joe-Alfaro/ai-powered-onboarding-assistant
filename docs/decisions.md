@@ -1500,3 +1500,31 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   `tabIndex` on every page); relying on Next.js's route announcer, which reads the page title,
   and the title is the same on every step.
 - **Affects:** R34
+
+## 2026-10-17: What the registered health probes call, and how fast they give up
+
+- **Decided by:** agent (test agent, health-probes)
+- **Decision:**
+  - `spec/requests/health_probes_spec.rb` exercises `Health::Check.probes` as registered. Only
+    the boundaries are stubbed: Supabase Storage and the LLM provider over HTTP with WebMock, and
+    Tesseract through `PATH`. The database probe stays real; the 503 case swaps in only a real
+    connection to a dead port.
+  - **storage:** `GET <SUPABASE_URL>/storage/v1/bucket/<STORAGE_BUCKET>` with the service role
+    key (Supabase's bucket metadata call). Up only on 200; a missing bucket, 5xx, timeout or
+    connection error is down.
+  - **ocr:** `tesseract --version` from `PATH`. Down when it isn't found, exits non-zero or hangs.
+  - **llm:** a `GET` to the configured `LLM_PROVIDER`'s model list endpoint (`/v1/models` on the
+    OpenAI-compatible base URL, or Anthropic's `/v1/models` with `x-api-key`), never a completion.
+    Any non-200 (401 and 429 included), timeout, connection error or missing provider config is
+    down. Only the primary provider is probed.
+  - Storage and LLM results, failures included, are cached for at most 5 minutes, so repeated
+    pings make one provider call per window.
+  - Each probe reports down within 3 s when its dependency hangs, and `/health` answers within
+    6 s with storage, OCR and the LLM all hanging, so an uptime check never times out on it.
+  - Specs reset the memoized registry with `Health::Check.instance_variable_set(:@probes, nil)`
+    so cached results and environment don't leak between examples; the registry must stay
+    rebuildable that way.
+- **Alternatives:** a completion call for the LLM (spends quota on every window); HEAD on a
+  known object for storage (needs an object to exist); probing the fallback provider too
+  (doubles provider calls for little signal).
+- **Affects:** R31
