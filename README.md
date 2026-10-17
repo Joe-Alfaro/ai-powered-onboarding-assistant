@@ -4,6 +4,17 @@ A Rails API (`api/`) and a React web app (`web/`) for onboarding: ID upload with
 assistant that collects an assessment, and scheduling. `ARCHITECTURE.md` is the design;
 `docs/requirements/onboarding-assistant.md` lists the requirements (R1, R2, ...).
 
+## Documentation
+
+| Document | Covers |
+| --- | --- |
+| [docs/privacy.md](docs/privacy.md) | Data retention, consent withdrawal and hard deletion (R13, R17) |
+| [docs/security.md](docs/security.md) | Encryption in transit and at rest, keys and access control (R18, R19) |
+| [docs/data-to-llm.md](docs/data-to-llm.md) | Exactly which personal data is sent to LLM providers, and why (R20) |
+| [docs/compliance.md](docs/compliance.md) | No assumed service domain; how the design supports HIPAA and PCI DSS, and what the demo lacks (R20) |
+| [AI_USAGE.md](AI_USAGE.md) | AI tools used to build the app, the LLM and OCR engines and versions, and the prompts and configuration |
+| [docs/decisions.md](docs/decisions.md) | Every non-obvious choice, with alternatives and tradeoffs |
+
 ## Quick start
 
 This takes about 15 minutes on a fresh macOS machine, most of it downloads. You need no paid key:

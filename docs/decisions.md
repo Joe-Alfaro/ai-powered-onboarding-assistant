@@ -1550,3 +1550,16 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   (allows longer timeouts, but adds connection and thread handling to every ping); a separate HTTP
   client for the probes (duplicates provider URLs and headers).
 - **Affects:** R31
+
+## 2026-10-17: Encryption and compliance docs live in docs/
+
+- **Decided by:** agent (docs, compliance-encryption)
+- **Decision:** the encryption write-up (R18) goes in a new `docs/security.md` with access
+  control, rather than in `docs/privacy.md`, which stays about retention and deletion. The R20
+  compliance write-up goes in `docs/compliance.md`. Both stand on their own without
+  `ARCHITECTURE.md`, and the README links them. Database TLS is documented as negotiated by
+  default but not pinned with `sslmode=require`, because the code doesn't pin it.
+- **Alternatives:** an Encryption section in `docs/privacy.md`; one combined security and
+  compliance document.
+- **Tradeoffs:** one more file to keep current, but each document answers one question.
+- **Affects:** R18, R20, Deliverables
