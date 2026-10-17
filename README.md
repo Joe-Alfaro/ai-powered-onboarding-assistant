@@ -165,6 +165,12 @@ cd api && bin/rake ai:eval           # OCR plus the chat sets on LLM_PROVIDER (n
 
 [AI eval](#ai-eval-r27-r28) below covers the full harness and the provider comparison.
 
+## Performance
+
+[docs/performance.md](docs/performance.md) has the k6 load test (`perf/load.js`, R22, R38), the
+OCR and booking timing tasks (`bin/rake perf:ocr` and `perf:booking`, R23, R24), how each is
+measured, a local baseline and the deployed results. `brew install k6` for the load test.
+
 ## Environment variables
 
 `bin/setup` writes local values for you. Every variable the code reads is listed and explained in
@@ -193,6 +199,7 @@ cd api && bin/rake ai:eval           # OCR plus the chat sets on LLM_PROVIDER (n
 | `OCR_CONFIDENCE_THRESHOLD` | Minimum OCR confidence (0-100) to pre-fill a field | `60` |
 | `GOLDEN_DIR` | Golden set directory for the seed and the eval | `eval/golden` |
 | `RESULTS_DIR` | Where `ai:eval` writes its results files | `eval/results` |
+| `PERF_BASE_URL`, `PERF_USER_PASSWORD`, `PERF_USERS`, `PERF_TOKENS_FILE`, `PERF_RUNS`, `PERF_LOG_FILE`, `SUPABASE_ANON_KEY` | Performance tooling only ([docs/performance.md](docs/performance.md)) | Unset until you measure |
 | `PORT` | Port the API listens on | `3001` |
 | `RAILS_MAX_THREADS`, `JOB_CONCURRENCY`, `SOLID_QUEUE_IN_PUMA`, `RAILS_LOG_LEVEL`, `PIDFILE`, `API_DATABASE_PASSWORD` | Puma, Solid Queue and production runtime settings | Defaults from the example |
 

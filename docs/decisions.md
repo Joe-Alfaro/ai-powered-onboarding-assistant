@@ -1563,3 +1563,29 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   compliance document.
 - **Tradeoffs:** one more file to keep current, but each document answers one question.
 - **Affects:** R18, R20, Deliverables
+
+## 2026-10-17: How performance is measured
+
+- **Decided by:** agent (implementation agent, perf-tooling)
+- **Decision:**
+  - One k6 script (`perf/load.js`) covers R22: each of the 20 virtual users loops over the health
+    check, slots, onboarding, a chat message and a booking it cancels again, with 1 s of think
+    time. A 409 on booking (slot taken by another user) is an expected status, not an error.
+    HTTP 429s and `llm_rate_limited` chat replies are separate counters (R38).
+  - `LLM_MODE` (real, fake or off) is a required k6 variable recorded in the output. The API's
+    own configuration decides what chat hits; `perf/local-api.sh` sets the API up for either mode
+    locally, reusing the end-to-end tests' fake LLM.
+  - The OCR and booking timings are rake tasks against a base URL, run one request at a time.
+    Server times come from the Lograge `duration` of each request, matched by `X-Request-Id`,
+    so a copy of the deployed log works the same as the local one. OCR also reports client time
+    on an open connection.
+  - Percentiles are nearest rank, the same as the eval harness, in `Perf::Stats` with a spec.
+  - Load-test users have fixed `example.com` emails and an operator-chosen password
+    (`PERF_USER_PASSWORD`); their tokens go to an untracked file, never to the repo or stdout.
+- **Alternatives:** separate k6 scripts for chat and the API; timing OCR and booking inside k6;
+  a `Server-Timing` header instead of reading logs; new random users on every run.
+- **Tradeoffs:** reading logs needs a log copy from the deployed service, but uses the existing
+  R24 record rather than adding a header. Sequential timing runs measure latency without load,
+  which is what R23 and R24 ask for; the k6 run covers latency under load. A provider 429 that
+  the fallback answers isn't visible to the client and isn't counted.
+- **Affects:** R22, R23, R24, R38
