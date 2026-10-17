@@ -65,4 +65,13 @@ RSpec.describe "Slots API", type: :request do
       expect(response.parsed_body.dig("error", "code")).to eq("unauthorized")
     end
   end
+
+  describe "the slot list never shows past slots" do
+    it "hides a slot that has already started, even though it hasn't ended" do
+      create_slot(starts_at: 10.minutes.ago, length: 30.minutes)
+      future = create_slot
+
+      expect(open_slot_ids).to eq([ future.id ])
+    end
+  end
 end

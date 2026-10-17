@@ -275,4 +275,28 @@ RSpec.describe "Bookings API", type: :request do
       expect(Booking.where(slot_id: slot.id).count).to eq(1)
     end
   end
+
+  describe "past slots can't be booked by ID" do
+    let(:past_slot) { create_slot(starts_at: 1.day.ago.utc.change(min: 0, sec: 0)) }
+
+    it "POST /bookings for a past slot returns 422 slot_in_past and books nothing" do
+      post "/bookings", params: { slot_id: past_slot.id }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(error_code).to eq("slot_in_past")
+      expect(response.parsed_body.dig("error", "message")).to be_present
+      expect(Booking.where(user_id: user_id)).to be_empty
+    end
+
+    it "PATCH /bookings/:id into a past slot returns 422 slot_in_past and keeps the booking" do
+      booking = create_booking(user_id: user_id)
+      original_slot_id = booking.slot_id
+
+      patch "/bookings/#{booking.id}", params: { slot_id: past_slot.id }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(error_code).to eq("slot_in_past")
+      expect(booking.reload).to have_attributes(slot_id: original_slot_id, status: "active")
+    end
+  end
 end

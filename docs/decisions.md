@@ -1589,3 +1589,40 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   which is what R23 and R24 ask for; the k6 run covers latency under load. A provider 429 that
   the fallback answers isn't visible to the client and isn't counted.
 - **Affects:** R22, R23, R24, R38
+
+## 2026-10-17: Hardening test contracts
+
+- **Decided by:** agent (test agent, hardening)
+- **Decision:**
+  - **Past slots:** `Scheduling::Booker#book` and `#reschedule` return the outcome `:slot_in_past`
+    for a slot whose start time has passed (one that has started but not ended counts as past).
+    The bookings API maps it to 422 with code `slot_in_past` and a message. The slot list keeps
+    hiding any slot that has started.
+  - **Consent version:** the API owns `Consent::CURRENT_TEXT_VERSION`, which must equal
+    `CONSENT_TEXT_VERSION` in `web/src/identity/ConsentForm.tsx` (a spec compares them).
+    `POST /consents` with any other version returns 422 `validation_failed` and stores nothing; a
+    missing version stays 400 or 422. The check belongs at the request boundary, not in
+    `Consent::Ledger.grant!`, whose spec still grants an older version to model history.
+  - **Trigger thresholds:** every `TRIGGERS` entry has `threshold: { value, unit }`, with units
+    `seconds` (long-pause), `failures` (upload-failure) and `distress-classifications`
+    (high-stress-intent). The long-pause value equals `DEFAULT_LONG_PAUSE_SECONDS`, and
+    `NEXT_PUBLIC_LONG_PAUSE_SECONDS` still overrides it. The engine reads the table when it is
+    created, and `createTriggerEngine({ thresholds })` overrides any of them in the table's unit.
+    Tests swap a table value with `jest.replaceProperty`, so the entries mustn't be frozen.
+  - **Root error page:** `web/src/app/global-error.tsx` renders its own `<html lang="en">` and
+    `<body>` with the same friendly copy and "Try again" retry as `error.tsx`, and no error
+    details.
+  - **Postgres pin:** `docker-compose.yml` and the CI job use one exact `postgres:<major>.<minor>`
+    image, and the suite checks the server it runs on is that version. The committed schema.rb
+    matches 17.11 output, so 17.11 is the version to pin. The existing scratch-database migrate
+    check in `spec/db/schema_spec.rb` is the "migrate leaves schema.rb unchanged" check.
+  - **bin/setup:** tested with stubbed external tools on `PATH` against a temporary copy of the
+    script and the `.env.example` files.
+  - **Purge in development:** `config/recurring.yml` has a `development` entry for
+    `Documents::PurgeExpiredUploadsJob` that runs at least hourly. The spec checks only the
+    config: something in development must also run recurring tasks, since the default `:async`
+    adapter doesn't read `recurring.yml`.
+- **Alternatives:** validating the consent version in the model (would reject historical rows'
+  versions); counting thresholds in the engine only, with no units in the table; testing bin/setup
+  only by reading its source.
+- **Affects:** R9, R12, R17, R30, R32

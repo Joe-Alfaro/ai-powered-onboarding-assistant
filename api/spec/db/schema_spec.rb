@@ -35,4 +35,31 @@ RSpec.describe "db/schema.rb" do
       end
     end
   end
+
+  # R32: pg_dump-style formatting (check constraints especially) changes between Postgres minor
+  # releases, so a floating tag like postgres:17 lets bin/rails db:migrate rewrite schema.rb on a
+  # machine that pulled a newer image. Local, CI and this suite must all run one exact version.
+  describe "pinned Postgres version" do
+    let(:repo_root) { Rails.root.join("..").expand_path }
+    let(:compose_image) { YAML.safe_load(repo_root.join("docker-compose.yml").read).dig("services", "postgres", "image") }
+    let(:pinned_version) { compose_image[/\Apostgres:(\d+\.\d+)(?:-[\w.]+)?\z/, 1] }
+
+    it "docker-compose.yml pins an exact major.minor Postgres image, not a floating tag" do
+      expect(compose_image).to match(/\Apostgres:\d+\.\d+(-[\w.]+)?\z/)
+    end
+
+    it "the CI job starts the same Postgres image as docker-compose.yml" do
+      ci_images = repo_root.join(".gitlab-ci.yml").read.scan(/\bpostgres:[\w.-]+/)
+
+      expect(ci_images).not_to be_empty
+      expect(ci_images.uniq).to eq([ compose_image ])
+    end
+
+    it "the database the suite runs on is the pinned version, the one the committed schema.rb was dumped with" do
+      server_version = ActiveRecord::Base.connection.select_value("SHOW server_version")[/\A\d+\.\d+/]
+
+      expect(pinned_version).not_to be_nil, "docker-compose.yml doesn't pin an exact version (#{compose_image})"
+      expect(server_version).to eq(pinned_version)
+    end
+  end
 end

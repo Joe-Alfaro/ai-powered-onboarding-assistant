@@ -225,4 +225,37 @@ RSpec.describe "Scheduling::Booker" do
       expect(Booking.where(slot_id: slot.id).count).to eq(1)
     end
   end
+
+  # Booking by ID must not reach slots the slot list hides: a slot that has already started can't
+  # be booked or rescheduled into.
+  describe "past slots" do
+    let(:past_slot) { create_slot(starts_at: 1.day.ago.utc.change(min: 0, sec: 0)) }
+    let(:started_slot) { create_slot(starts_at: 10.minutes.ago, length: 30.minutes) }
+
+    it "rejects booking a past slot by ID as slot_in_past and creates no booking" do
+      result = booker.book(slot_id: past_slot.id)
+
+      expect(result).not_to be_success
+      expect(result.outcome).to eq(:slot_in_past)
+      expect(result.booking).to be_nil
+      expect(Booking.where(slot_id: past_slot.id)).to be_empty
+    end
+
+    it "rejects booking a slot that has already started" do
+      result = booker.book(slot_id: started_slot.id)
+
+      expect(result.outcome).to eq(:slot_in_past)
+      expect(Booking.where(slot_id: started_slot.id)).to be_empty
+    end
+
+    it "rejects rescheduling into a past slot and leaves the booking unchanged" do
+      booking = create_booking(user_id: user_id)
+
+      result = nil
+      expect { result = booker.reschedule(booking_id: booking.id, slot_id: past_slot.id) }
+        .not_to(change { booking.reload.attributes })
+      expect(result).not_to be_success
+      expect(result.outcome).to eq(:slot_in_past)
+    end
+  end
 end
