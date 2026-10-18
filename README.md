@@ -4,6 +4,27 @@ A Rails API (`api/`) and a React web app (`web/`) for onboarding: ID upload with
 assistant that collects an assessment, and scheduling. `ARCHITECTURE.md` is the design;
 `docs/requirements/onboarding-assistant.md` lists the requirements (R1, R2, ...).
 
+## Live demo
+
+The demo is hosted on Railway:
+
+- Web: <https://web-production-3d133.up.railway.app>
+- API: <https://api-production-460eb.up.railway.app> (`GET /health` checks it and its database)
+
+Sign in with a demo user:
+
+| Email | Password |
+| --- | --- |
+| `demo@example.com` | `demo-onboarding-2026` |
+| `demo2@example.com` | `demo-onboarding-2026` |
+
+To reset the demo data, re-run the seed against the deployed API
+(`railway run --service api bin/rails db:seed`, see [docs/deploy.md](docs/deploy.md#4-seed-the-demo-data)):
+it adds fresh open slots and recreates any missing demo user, and leaves existing slots, users
+and bookings alone.
+[docs/deploy.md](docs/deploy.md) covers the deployment and
+[docs/performance.md](docs/performance.md) the deployed performance and uptime results.
+
 ## Documentation
 
 | Document | Covers |

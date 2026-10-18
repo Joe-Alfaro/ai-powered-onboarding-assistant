@@ -1,4 +1,4 @@
-# Performance (R22, R23, R24, R38)
+# Performance (R22, R23, R24, R25, R38)
 
 Three measurements, all run against a base URL so the same commands work on the local stack and
 on the deployed API:
@@ -48,7 +48,7 @@ k6 run -e BASE_URL=<API URL> -e LLM_MODE=real -e SUMMARY_FILE=/tmp/k6.json perf/
 ```
 
 Each virtual user loops: `GET /health`, `GET /slots`, `GET /onboarding`, `POST /chat/messages`,
-then `POST /bookings` on a random open slot and `DELETE /bookings/:id` to cancel it, then sleeps
+then `POST /bookings` on a random open slot and `DELETE /bookings/:id` to cancel what it holds, then sleeps
 1 s. The report gives the overall p95, the p95 and median per endpoint, the error rate, and two
 separate counts for R38: HTTP 429 responses from any endpoint, and chat replies that failed with
 `llm_rate_limited` (the provider's 429 after the fallback provider was tried). A provider 429 that
@@ -299,8 +299,17 @@ Measured 2026-10-18: the real-LLM run from 20:43:42 to 20:44:46 UTC, then the AP
 
 Requests: 1,902 (505 before), error rate: 0.00%, HTTP 429 responses: 0, LLM rate-limited chat
 replies: 0. Every k6 threshold passed, the per-endpoint p95 < 3 s included. The server's logs
-for the window hold no 5xx and no connection-pool errors; 30 `POST /bookings` answered the
-expected 409.
+for the window hold no 5xx and no connection-pool errors.
+
+**Bookings and cancels.** The 409 count covers `POST /bookings` responses only, never cancels.
+Of the 319 `POST /bookings` in the server's logs, 289 created a booking and 30 answered the
+expected 409. `perf/load.js` treats two 409 codes as expected: `slot_taken`, when another virtual
+user booked the random slot first, so nothing is cancelled; and `booking_exists`, when the user
+still holds a booking from an earlier iteration, so the script looks it up with `GET /bookings`
+and cancels that one. That gives the 307 `DELETE /bookings/:id`: one for each of the 289 new
+bookings plus 18 after a `booking_exists`, which leaves 12 `slot_taken` with no cancel. The logs
+don't split the 30 by code, so the 18/12 split is derived from those counts. The 1,902 is k6's
+count of every request in the run, across all endpoints.
 
 **Server-side for the same run** (Lograge, `railway logs --service api --json`, nearest-rank).
 Chat lines now also carry `llm_calls` and `llm_ms`.
@@ -330,3 +339,20 @@ and share the GVL. That costs well under the 3 s budget.
 **R22: met on the deployed app.** Overall p95 1.95 s and chat p95 2.43 s, both under 3.0 s,
 with 0 errors. The margin for chat is about 0.6 s, and almost all of the chat time is the
 provider's, so a slower provider hour could narrow it.
+
+## Uptime (R25)
+
+> **Not running yet.** This section states the check; the blanks below are filled in once the
+> monitor is set up and the evaluation window has passed.
+
+The check: an external uptime monitor sends `GET https://api-production-460eb.up.railway.app/health`
+every 5 minutes. `/health` runs `SELECT 1` on the database, so a passing check means the API and
+its database both answered. The same query also keeps the database active, so it doesn't pause
+for inactivity during the window. R25 is met when the measured uptime over the window is at
+least 99%.
+
+| Item | Value |
+| --- | --- |
+| Monitor status page | _TBD: status-page URL_ |
+| Evaluation window | _TBD: start and end, UTC_ |
+| Measured uptime | _TBD: %_ |
