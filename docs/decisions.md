@@ -1835,10 +1835,9 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 ## 2026-10-18: Neutral wording for the deliverables checks
 
 - **Decided by:** agent (docs, submission-fixes)
-- **Decision:** the requirements' Deliverables section now says "Checked before release" instead
-  of "Checked at submission", and the README item says "the local quick-start" instead of "the
-  grader quick-start". `ARCHITECTURE.md` uses the same terms ("reviewer setup", "local
-  quick-start", "checked before release"). The checks themselves are unchanged.
+- **Decision:** reworded two phrases in the requirements' Deliverables section that implied
+  external grading to neutral terms ("checked before release" and "the local quick-start"), and
+  made the same change in `ARCHITECTURE.md`. The checks themselves are unchanged.
 - **Why:** the docs should describe the project in neutral terms, not in terms of who reviews it.
 - **Alternatives:** leave the wording as it was.
 - **Tradeoffs:** none; earlier entries in this log keep their original wording, since the log is
