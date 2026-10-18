@@ -4,8 +4,9 @@ module Chat
   # retried once with the reasons; then the intent's handler, the reply guard, and saving the
   # turn, the draft and, once complete, the assessment. Consent is checked before every LLM call
   # (R13). LLM failures other than an unreadable answer propagate as Llm::Error. Every LLM call for
-  # one message, the retry and the fallback provider included, fits one deadline (R16). A chosen
-  # reschedule or cancel choice skips the LLM and goes straight to its handler (R36).
+  # one message, the retry and the fallback provider included, fits one deadline (R16) and holds no
+  # database connection (R22). A chosen reschedule or cancel choice skips the LLM and goes straight
+  # to its handler (R36).
   class Orchestrator
     HANDLERS = {
       "provide-details" => Handlers::ProvideDetails,
@@ -94,9 +95,19 @@ module Chat
     def attempt(conversation, text, retry_errors, deadline)
       raise ConsentWithdrawn if Consent::Ledger.withdrawn?(user_id)
 
-      ResponseValidator.call(llm_client.complete(payload(conversation, text, retry_errors), deadline: deadline).data)
+      llm_payload = payload(conversation, text, retry_errors)
+      ResponseValidator.call(without_database_connection { llm_client.complete(llm_payload, deadline: deadline) }.data)
     rescue Llm::InvalidResponseError
       [ nil, [ "the answer did not follow the response schema" ] ]
+    end
+
+    # The LLM call is most of a message's time, so it holds no database connection: Puma can run
+    # more threads than the pool has connections (R22). The next query checks one out again. A
+    # connection inside an open transaction stays, since handing it back would break the transaction.
+    def without_database_connection
+      pool = ActiveRecord::Base.connection_pool
+      pool.release_connection unless pool.active_connection&.transaction_open?
+      yield
     end
 
     def payload(conversation, text, retry_errors)

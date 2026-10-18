@@ -17,7 +17,10 @@ default: &default
   encoding: unicode
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
-  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  # DB_POOL caps it apart from Puma's thread count: a chat request waits on the LLM without a
+  # connection, so threads can outnumber connections (R22). Keep it inside the hosted database's
+  # connection limit, which Solid Queue's processes share (docs/deploy.md).
+  max_connections: <%= ENV.fetch("DB_POOL") { [ ENV.fetch("RAILS_MAX_THREADS") { 5 }.to_i, 10 ].min } %>
 
 # Local and CI Postgres. The defaults match docker-compose.yml; CI points these at its service.
 local: &local

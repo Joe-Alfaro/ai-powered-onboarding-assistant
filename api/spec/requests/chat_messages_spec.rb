@@ -198,4 +198,45 @@ RSpec.describe "POST /chat/messages", type: :request do
       expect(response.body).not_to match(ChatHelpers::BOOKING_CLAIM)
     end
   end
+
+  # R22: the request's log line says how many LLM calls it made and how long they took, so a slow
+  # chat can be told apart from a retry, a fallback or database time. No message content.
+  describe "R22: LLM calls in the request log" do
+    def chat_log_entry(message)
+      lines = log_lines(capture_logs { post_message(message) })
+      lines.map { |line| JSON.parse(line) }.find { |entry| entry["path"] == "/chat/messages" }
+    end
+
+    it "R22: logs one call and its time for a plain answer" do
+      entry = chat_log_entry("What happens next?")
+
+      expect(entry).to include("llm_calls" => 1, "llm_ms" => be_a(Numeric).and(be >= 0))
+      expect(entry.to_s).not_to include("What happens next?")
+    end
+
+    it "R22: counts the retry after an invalid answer" do
+      llm.respond_with("reply" => "Not the response schema")
+
+      expect(chat_log_entry("What happens next?")).to include("llm_calls" => 2)
+    end
+
+    it "R22: counts the fallback provider's call after the primary fails" do
+      fallback = FakeLlmAdapter.new.always_respond_with(llm_output("ask-question"))
+      allow(Llm::Client).to receive(:from_env)
+        .and_return(Llm::Client.new(primary: FakeLlmAdapter.new.fail_with(Llm::ServerError), fallback: fallback))
+
+      expect(chat_log_entry("What happens next?")).to include("llm_calls" => 2, "status" => 200)
+    end
+
+    it "R22: still logs the calls when the LLM fails" do
+      allow(Llm::Client).to receive(:from_env)
+        .and_return(Llm::Client.new(primary: FakeLlmAdapter.new.fail_with(Llm::ServerError)))
+
+      expect(chat_log_entry("What happens next?")).to include("llm_calls" => 1, "status" => 503)
+    end
+
+    it "R22: logs no LLM calls for an empty message, which skips the LLM" do
+      expect(chat_log_entry("")).to include("llm_calls" => 0, "llm_ms" => 0)
+    end
+  end
 end

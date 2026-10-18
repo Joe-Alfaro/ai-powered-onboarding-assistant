@@ -1803,3 +1803,31 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   asks for that field again. The sentinel list is fixed, so other ways of saying "unknown" can still
   get through; they are rarer than the bracketed form.
 - **Affects:** R1, R2, R27
+
+## 2026-10-18: Many Puma threads over a small database pool for the chat load
+
+- **Decided by:** agent (implementation agent, r22-concurrency)
+- **Decision:** the database pool size comes from `DB_POOL`, defaulting to `RAILS_MAX_THREADS`
+  capped at 10, so Puma's thread count and the pool are set separately. Production should run
+  `RAILS_MAX_THREADS=24` and `DB_POOL=6` in one Puma process (`WEB_CONCURRENCY` unset). The chat
+  orchestrator hands back any leased connection before each LLM call (unless a transaction is
+  open), and the chat request's log line now records `llm_calls` and `llm_ms`.
+- **Why:** the deployed R22 run (20 VUs) reached a client p95 of 8.0 s, 11.5 s for chat, while
+  the server-side chat p95 was 3.5 s: requests queued for the 3 Puma threads, each held for about
+  2 s by an LLM call. Rails 8.1 already checks a connection out per query, so a chat request holds
+  none while it waits, and the new spec proves it. The explicit release covers code that leases
+  one for the rest of the request. Many threads can therefore wait on the LLM while few
+  connections are in use. The free Supabase session pooler allows about 15 connections, and Solid
+  Queue's processes inside Puma use about 7 of them. In the deployed logs, chat spent about 240 ms
+  in the database, about 11 queries at about 20 ms each (Railway `sfo` to Supabase us-west-2, the
+  closest Railway region). A local run against real Haiku made one call per message, with no retry,
+  in 1.1 to 1.8 s, with about 2,000 input and 130 output tokens. So the 3.5 s tail is not explained
+  by prompt size, and the new log fields will show whether it comes from retries, fallbacks or the
+  provider.
+- **Alternatives:** more Puma workers, which double the connection pools and the memory; a
+  transaction pooler, which allows more clients but changes the agreed `DATABASE_URL`; cutting the
+  chat path's queries, which would save about 100 ms out of 2 s.
+- **Tradeoffs:** with 24 threads, the GVL makes CPU-bound requests slower under load; this app's
+  requests mostly wait on the LLM and the database. With 6 connections, a burst of database-heavy
+  requests waits briefly for one (up to the 5 s checkout timeout).
+- **Affects:** R22, R38

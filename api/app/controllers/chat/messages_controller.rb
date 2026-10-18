@@ -17,7 +17,8 @@ module Chat
     end
 
     def create
-      result = Chat::Orchestrator.new(user_id: current_user_id, llm_client: Llm::Client.from_env)
+      @llm_client = Llm::Client.from_env
+      result = Chat::Orchestrator.new(user_id: current_user_id, llm_client: @llm_client)
                                  .handle(message: params[:message], booking_id: id_param(:booking_id),
                                          slot_id: id_param(:slot_id), cancel: params[:cancel] == true)
 
@@ -25,6 +26,13 @@ module Chat
     end
 
     private
+
+    # The LLM calls' count and time go on the request's log line, beside its db time (R22).
+    def append_info_to_payload(payload)
+      super
+      payload[:llm_calls] = @llm_client&.call_count || 0
+      payload[:llm_ms] = ((@llm_client&.call_seconds || 0) * 1000).round(2)
+    end
 
     def wire_actions(actions)
       actions.map { |action| WIRE_ACTIONS.fetch(action, action) }

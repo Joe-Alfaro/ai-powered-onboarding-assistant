@@ -3,7 +3,8 @@ module Llm
   # timeout, 5xx, 429 or connection failure is retried once on LLM_FALLBACK_PROVIDER when one is
   # set, inside an overall budget that keeps the failure path under R16's 10 s. A caller making
   # several calls for one request passes its own `deadline` (a monotonic clock reading), and no
-  # call runs past it.
+  # call runs past it. The client counts the provider calls it made and their time, for the
+  # request's log line (R22).
   class Client
     TIMEOUT_SECONDS = 6
     # Primary plus fallback, leaving about a second for the rest of the request.
@@ -20,10 +21,14 @@ module Llm
       new(primary: primary, fallback: fallback)
     end
 
+    attr_reader :call_count, :call_seconds
+
     # primary and fallback respond to #complete(payload, timeout:) and return an Llm::Response.
     def initialize(primary:, fallback: nil)
       @primary = primary
       @fallback = fallback
+      @call_count = 0
+      @call_seconds = 0.0
     end
 
     def complete(payload, deadline: nil)
@@ -31,12 +36,13 @@ module Llm
 
       deadline = [ deadline, self.class.now + BUDGET_SECONDS ].compact.min
       begin
-        @primary.complete(payload, timeout: timeout_until(deadline))
+        timeout = timeout_until(deadline)
+        timed { @primary.complete(payload, timeout: timeout) }
       rescue Error => error
         remaining = deadline - self.class.now
         raise unless @fallback && error.fallback? && remaining >= MIN_FALLBACK_SECONDS
 
-        @fallback.complete(payload, timeout: [ TIMEOUT_SECONDS, remaining ].min)
+        timed { @fallback.complete(payload, timeout: [ TIMEOUT_SECONDS, remaining ].min) }
       end
     end
 
@@ -45,6 +51,14 @@ module Llm
     end
 
     private
+
+    def timed
+      started = self.class.now
+      @call_count += 1
+      yield
+    ensure
+      @call_seconds += self.class.now - started
+    end
 
     def timeout_until(deadline)
       remaining = deadline - self.class.now

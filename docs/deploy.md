@@ -90,9 +90,18 @@ Puma listens on it. See `api/.env.example` for what each one does.
 | `LLM_PROVIDER`, `LLM_MODEL` | the chosen provider and model |
 | `LLM_FALLBACK_PROVIDER`, `LLM_FALLBACK_MODEL` | optional fallback |
 | `GROQ_API_KEY`, `CLAUDE_API_KEY`, `GEMINI_API_KEY` | only the keys for the configured providers |
-| `MAX_UPLOAD_MB`, `OCR_CONFIDENCE_THRESHOLD`, `RAILS_MAX_THREADS`, `RAILS_LOG_LEVEL` | optional; defaults in `api/.env.example` |
+| `RAILS_MAX_THREADS` | `24`: Puma threads. Chat requests mostly wait on the LLM, so one process needs many threads for 20 concurrent users (R22) |
+| `DB_POOL` | `6`: database connections for Puma, apart from the thread count (see below) |
+| `MAX_UPLOAD_MB`, `OCR_CONFIDENCE_THRESHOLD`, `RAILS_LOG_LEVEL` | optional; defaults in `api/.env.example` |
 
 `RAILS_MASTER_KEY` isn't needed: `SECRET_KEY_BASE` replaces the credentials file.
+
+**Connection budget.** The free Supabase session pooler allows about 15 connections. Every
+process opens up to `DB_POOL` of them as it needs them: Puma, and Solid Queue's supervisor,
+dispatcher, scheduler and worker (3 job threads), which together use about 7. `DB_POOL=6` leaves
+room for a `railway run` console or migration. A chat request holds no connection while it waits
+on the LLM, so 24 threads share the 6 connections. Leave `WEB_CONCURRENCY` unset: a second Puma
+worker would need its own pool on top.
 
 ### Web service variables
 
