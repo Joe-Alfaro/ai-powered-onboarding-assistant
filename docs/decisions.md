@@ -1721,3 +1721,62 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
 - **Alternatives:** the template alone for a diagnosis claim (for a question, the template is about dates and reads
   oddly); a per-call budget only (lets a slow invalid answer and a hung retry pass 10 s).
 - **Affects:** R3, R16, R34, R36, R37
+
+## 2026-10-18: Deploy infrastructure is test-first in one session
+
+- **Decided by:** user (deploy-readiness task); recorded by agent (implementation agent,
+  deploy-readiness)
+- **Decision:** the deploy-readiness changes (database config, the Storage bucket task, Railway
+  config and the web Dockerfile) are written by one agent that writes each failing spec first,
+  watches it fail, then implements. This is an exception to the separate test agent and
+  implementation agent pair, for deploy infrastructure only.
+- **Alternatives:** the usual test agent then implementation agent pair.
+- **Tradeoffs:** faster under a same-day deadline, but no second agent checks that the specs
+  match the requirement before the code exists. The specs run the real production boot and the
+  docker builds are checked by hand, which limits the risk.
+- **Affects:** Deliverables (deployed app)
+
+## 2026-10-18: One production database for the app, Solid Queue and Solid Cache
+
+- **Decided by:** agent (implementation agent, deploy-readiness)
+- **Decision:** production has one database config, `DATABASE_URL` (the Supabase project's one
+  Postgres). Solid Queue and Solid Cache use the primary connection, and their tables are an
+  ordinary migration in `db/migrate`, so `db/schema.rb` holds every table and `db:prepare` on an
+  empty database creates them all. `queue_schema.rb` and `cache_schema.rb` are removed.
+  `db:prepare` never seeds in production (`seeds: false`); the seed runs on request.
+- **Alternatives:** keep separate `queue` and `cache` configs pointing at the same URL with their
+  own `migrations_paths`.
+- **Tradeoffs:** with a shared database, `db:prepare` sees `schema_migrations` already present
+  after the primary loads and skips `queue_schema.rb` and `cache_schema.rb`, so the queue and
+  cache tables silently never appear. One schema avoids that; the cost is that the queue and
+  cache tables also exist in the development and test databases, unused.
+- **Affects:** R17, R31, Deliverables
+
+## 2026-10-18: Supabase session pooler, prepared statements off
+
+- **Decided by:** agent (implementation agent, deploy-readiness)
+- **Decision:** `DATABASE_URL` is the Supabase session pooler string (port 5432 on the pooler
+  host), because Railway reaches Supabase over IPv4 and the direct database host is IPv6 only.
+  Production also turns prepared statements off, so a transaction pooler string (port 6543)
+  doesn't break queries either.
+- **Alternatives:** the direct connection (needs Supabase's paid IPv4 add-on); the transaction
+  pooler as the documented default.
+- **Tradeoffs:** without prepared statements each query is planned again, which costs little at
+  this load. The session pooler is still required for migrations, whose advisory lock needs a
+  session that the transaction pooler doesn't keep.
+- **Affects:** R22, Deliverables
+
+## 2026-10-18: The deploy creates the private bucket; the web app builds from a Dockerfile
+
+- **Decided by:** agent (implementation agent, deploy-readiness)
+- **Decision:** the API entrypoint runs `bin/rails storage:ensure_bucket` after `db:prepare` on
+  every boot. It creates `STORAGE_BUCKET` as private if missing, does nothing if it exists, and
+  makes it private if someone made it public. The web service builds from `web/Dockerfile`, which
+  declares every `NEXT_PUBLIC_` variable as a build argument so `next build` inlines it, and
+  `next start` binds `0.0.0.0:$PORT`.
+- **Alternatives:** create the bucket by hand in the dashboard; build the web app with Railway's
+  default builder (Railpack).
+- **Tradeoffs:** one extra Storage call per boot. The Dockerfile is more to maintain than the
+  default builder, but whether build-time variables reach `next build` no longer depends on the
+  builder's defaults.
+- **Affects:** R17, Deliverables
