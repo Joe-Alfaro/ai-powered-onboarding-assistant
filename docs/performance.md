@@ -186,3 +186,69 @@ Requests: _, error rate: _, HTTP 429 responses: _, LLM rate-limited chat replies
 **R24, booking (20 bookings):** server-side p95 _
 
 **R38, first request after 30 minutes idle:** _
+
+### After concurrency tuning
+
+> **Deployed, real LLM.** This is the R22 rerun after the change that lets Puma threads
+> outnumber database connections (`docs/decisions.md`, 2026-10-18). It replaces the first deployed
+> run's R22 result; the R23, R24 and R38 results above are unchanged.
+
+Measured 2026-10-18: the real-LLM run from 20:43:42 to 20:44:46 UTC, then the API-only run from
+20:44:57 to 20:45:29 UTC.
+
+**What changed since the first deployed run**
+
+- Puma: one process with **24 threads** (`RAILS_MAX_THREADS=24`). Before, it had 3.
+- Database pool: **6 connections** per process (`DB_POOL=6`), apart from the thread count. A chat
+  request holds no connection while it waits on the LLM, so the 24 threads share 6 connections.
+  Solid Queue's processes inside Puma use about 7 more, inside the session pooler's limit of
+  about 15.
+- Code: `35886c3`, which also includes the chat routing fix (`80ca414`). Same API URL, region
+  (`sfo`), LLM (Claude Haiku 4.5, Groq fallback set) and client laptop as above. Fresh tokens for
+  the same 20 load-test users, from `perf:users`.
+
+**R22, k6 (20 VUs, 60 s, `LLM_MODE=real`), client-side**
+
+| Endpoint | p95 | Median | Before (p95) |
+| --- | --- | --- | --- |
+| All requests | **1,949 ms** | | 8,025 ms |
+| `GET /health` | 275 ms | 123 ms | 8,309 ms |
+| `GET /slots` | 431 ms | 129 ms | 2,277 ms |
+| `GET /onboarding` | 364 ms | 175 ms | 2,311 ms |
+| `POST /chat/messages` | **2,432 ms** | 1,816 ms | 11,510 ms |
+| `POST /bookings` | 588 ms | 253 ms | 8,808 ms |
+| `DELETE /bookings/:id` | 283 ms | 225 ms | 4,410 ms |
+
+Requests: 1,902 (505 before), error rate: 0.00%, HTTP 429 responses: 0, LLM rate-limited chat
+replies: 0. Every k6 threshold passed, the per-endpoint p95 < 3 s included. The server's logs
+for the window hold no 5xx and no connection-pool errors; 30 `POST /bookings` answered the
+expected 409.
+
+**Server-side for the same run** (Lograge, `railway logs --service api --json`, nearest-rank).
+Chat lines now also carry `llm_calls` and `llm_ms`.
+
+| Endpoint | Requests | p95 | Median |
+| --- | --- | --- | --- |
+| `POST /chat/messages` | 319 | 2,342 ms | 1,712 ms |
+| of which LLM (`llm_ms`) | | 1,812 ms | 1,480 ms |
+| of which database (`db`) | | 292 ms | 241 ms |
+| `GET /slots` | 319 | 316 ms | 27 ms |
+| `GET /onboarding` | 319 | 237 ms | 76 ms |
+| `POST /bookings` | 319 | 493 ms | 153 ms |
+| `DELETE /bookings/:id` | 307 | 184 ms | 127 ms |
+
+All 319 chat requests made exactly one LLM call: no retry after an invalid answer and no fallback
+provider. The chat time is the Haiku call plus about 240 ms of database work, which is about 11
+queries at about 20 ms each from Railway `sfo` to Supabase us-west-2. The first run's 3.5 s
+server-side chat p95 didn't recur. That run predated these log fields, so its cause can't be
+pinned down; that run also had the earlier chat prompt. The non-chat endpoints' server p95 rose
+from 32-168 ms to 184-493 ms: with 24 threads, more of them wait for one of the 6 connections
+and share the GVL. That costs well under the 3 s budget.
+
+**API only, k6 (20 VUs, 30 s, `LLM_MODE=off`), client-side:** all requests p95 **328 ms**;
+`GET /health` 162 ms, `GET /slots` 160 ms, `GET /onboarding` 276 ms, `POST /bookings` 473 ms,
+`DELETE /bookings/:id` 290 ms. 1,537 requests, error rate 0.00%, HTTP 429 responses 0.
+
+**R22: met on the deployed app.** Overall p95 1.95 s and chat p95 2.43 s, both under 3.0 s,
+with 0 errors. The margin for chat is about 0.6 s, and almost all of the chat time is the
+provider's, so a slower provider hour could narrow it.
