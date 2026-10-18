@@ -10,6 +10,7 @@ The demo is hosted on Railway:
 
 - Web: <https://web-production-3d133.up.railway.app>
 - API: <https://api-production-460eb.up.railway.app> (`GET /health` checks it and its database)
+- Uptime status page (R25): <https://stats.uptimerobot.com/3tLDurSmdn>
 
 Sign in with a demo user:
 
@@ -228,7 +229,7 @@ nearest-rank except k6's own.
 | R23 OCR | server p95 1,838 ms (20 of 20 succeeded) | p95 < 8.0 s | `perf:ocr`: 20 golden-set uploads to `POST /documents`, server time from each request's Lograge `duration` |
 | R24 booking | server p95 156 ms (20 of 20 succeeded) | p95 < 1.0 s | `perf:booking`: 20 bookings, server time from each `POST /bookings` Lograge `duration` |
 | R38 cold start | 1.50 s to first byte | < 3 s | `curl` of `GET /health` after about 56 minutes idle |
-| R25 uptime | Pending: the monitor is still to be set up | ≥ 99% | External monitor on `GET /health` every 5 minutes |
+| R25 uptime | 100% so far (UptimeRobot, from 2026-10-18 23:38 UTC; [live figure](https://stats.uptimerobot.com/3tLDurSmdn)) | ≥ 99% | External monitor on `GET /health` every 5 minutes |
 
 **Eval scorecard** (`bin/rake ai:eval`, 2026-10-16):
 

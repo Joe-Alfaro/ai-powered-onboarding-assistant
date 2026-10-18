@@ -264,6 +264,10 @@ Oct 19, 2026, 9:00 AM CDT`); the done page.
   The chat asked real follow-ups and completed in 3 turns with no out-of-scope reply; the reason
   (`Help relocating pottery studio to a new building`) showed on the chat summary and the done
   page. The booking was then cancelled.
+- Sign-in redirects verified on the deployed app, 2026-10-18 23:42 UTC: signed out, `/chat` and
+  `/schedule` redirect to `/sign-in`; `demo@example.com` signs in to its current step (`/chat`);
+  sign-out returns to `/sign-in` and the protected pages redirect again; no console errors and no
+  failed requests. Read-only apart from signing in.
 
 ### After concurrency tuning
 
@@ -342,8 +346,9 @@ provider's, so a slower provider hour could narrow it.
 
 ## Uptime (R25)
 
-> **Not running yet.** This section states the check; the blanks below are filled in once the
-> monitor is set up and the evaluation window has passed.
+> **Running.** The monitor started on 2026-10-18 at 23:38 UTC. The evaluation window runs from
+> then until the reviewer checks, and the 99% check is judged over that window. The figure below
+> is a snapshot; the status page shows the live figure.
 
 The check: an external uptime monitor sends `GET https://api-production-460eb.up.railway.app/health`
 every 5 minutes. `/health` runs `SELECT 1` on the database, so a passing check means the API and
@@ -353,6 +358,10 @@ least 99%.
 
 | Item | Value |
 | --- | --- |
-| Monitor status page | _TBD: status-page URL_ |
-| Evaluation window | _TBD: start and end, UTC_ |
-| Measured uptime | _TBD: %_ |
+| Monitor | UptimeRobot HTTP(S) monitor on `GET /health`, every 5 minutes |
+| Monitor status page | <https://stats.uptimerobot.com/3tLDurSmdn> |
+| Evaluation window | Start 2026-10-18 23:38 UTC; end open, until the reviewer checks |
+| Measured uptime | 100%, read at 2026-10-18 23:41 UTC (status up) |
+
+R38 check 3: every 5-minute ping hits `/health`, which runs `SELECT 1` against the Supabase
+database, so the database stays active and doesn't pause for inactivity.
