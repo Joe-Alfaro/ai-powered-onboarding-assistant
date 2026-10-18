@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # check=error=true
 
-# This Dockerfile is designed for production, not development. Use with Kamal or build'n'run by hand:
+# This Dockerfile is designed for production, not development. Railway builds it (railway.toml); to
+# build and run by hand:
 # docker build -t api .
 # docker run -d -p 80:3000 -e RAILS_MASTER_KEY=<value from config/master.key> --name api api
 
@@ -17,7 +18,7 @@ WORKDIR /rails
 # Install base packages
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y curl libjemalloc2 postgresql-client \
-      libvips42 tesseract-ocr tesseract-ocr-eng && \
+      libvips42 libheif1 tesseract-ocr tesseract-ocr-eng && \
     ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 

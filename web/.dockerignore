@@ -1,0 +1,9 @@
+# Build context for the web Dockerfile: no local dependencies, build output or env files.
+/node_modules
+/.next
+/coverage
+/test-results
+/playwright-report
+/.env*
+/Dockerfile
+/.dockerignore
