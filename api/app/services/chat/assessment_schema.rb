@@ -5,6 +5,14 @@ module Chat
     # Collected from the LLM before an assessment can be saved; distress and notes have defaults.
     COLLECTED_FIELDS = %w[reason urgency preferred_window].freeze
     DEFAULTS = { "distress" => false, "notes" => "" }.freeze
+    # A bracketed token such as <UNKNOWN>, <reason> or [NAME]: an LLM's stand-in for a value it
+    # doesn't have, or an identity placeholder from Llm::PayloadBuilder echoed back.
+    PLACEHOLDER_TOKEN = /(?i:<\s*[a-z][a-z0-9_ ]*\s*>)|\[\s*[A-Z][A-Z0-9_ ]*\s*\]/
+    # Whole values that stand for "no answer" rather than an answer.
+    SENTINELS = [
+      "unknown", "n/a", "na", "none", "none provided", "null", "nil", "undefined", "tbd", "not provided",
+      "not specified", "not stated", "not given", "not mentioned", "not applicable", "unspecified"
+    ].freeze
 
     module_function
 
@@ -25,7 +33,22 @@ module Chat
     end
 
     def valid?(data)
-      data.is_a?(Hash) && full_schemer.valid?(JSON.parse(data.to_json))
+      data.is_a?(Hash) && full_schemer.valid?(JSON.parse(data.to_json)) && data.values.none? { |value| placeholder?(value) }
+    end
+
+    # True for text that stands in for a missing value (R2): a placeholder token, a sentinel such as
+    # "unknown" or "N/A", or nothing but punctuation. Such values count as not provided.
+    def placeholder?(value)
+      return false unless value.is_a?(String)
+      return true if value.match?(PLACEHOLDER_TOKEN)
+
+      bare = value.downcase.strip.gsub(/\A[[:punct:]\s]+|[[:punct:]\s]+\z/, "")
+      bare.empty? ? value.strip.present? : bare.in?(SENTINELS)
+    end
+
+    # The fields that hold a real value: nil, empty and placeholder values count as not provided.
+    def provided(fields)
+      fields.reject { |_, value| value.nil? || value == "" || placeholder?(value) }
     end
 
     # Error locations for a set of fields that may be incomplete, for example one LLM answer.

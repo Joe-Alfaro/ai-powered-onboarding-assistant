@@ -11,6 +11,16 @@ RSpec.describe "Chat eval sets" do
     end
   end
 
+  # The deployed smoke test's opening messages were classified out-of-scope by a real provider, so
+  # the eval runs them too: provide-details is about any need, not only a health one.
+  it "R1: provide-details includes the deployed smoke test's non-health reason, urgency and availability" do
+    expect(intent_set.fetch("provide-details")).to include(
+      "I would like help relocating my pottery studio to a new building.",
+      "It is fairly urgent, within the next two weeks.",
+      "Weekday mornings suit me best."
+    )
+  end
+
   it "R1: no utterance is labeled with more than one intent" do
     all_utterances = intent_set.values.flatten.map(&:downcase)
 

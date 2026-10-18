@@ -44,7 +44,7 @@ module Chat
       output = choice?(choice) ? chosen : classify(conversation, text)
       return respond_with_fallback(conversation, text) unless output
 
-      context = Handlers::Context.new(user_id: user_id, message: text, draft: conversation.draft, fields: output.fields,
+      context = Handlers::Context.new(user_id: user_id, message: text, draft: draft(conversation), fields: output.fields,
                                       llm_reply: output.reply, **choice)
       outcome = HANDLERS.fetch(output.intent).new(context).call
       reply = ReplyGuard.call(llm_reply: outcome.llm_reply, template: outcome.template)
@@ -104,7 +104,7 @@ module Chat
       Llm::PayloadBuilder.new(identity: confirmed_identity).build(
         system: Prompt.system(retry_errors: retry_errors),
         turns: turns + [ { role: "user", content: text } ],
-        assessment_draft: conversation.draft,
+        assessment_draft: draft(conversation),
         response_schema: Prompt.response_schema
       )
     end
@@ -117,9 +117,15 @@ module Chat
       end || {}
     end
 
+    # The stored draft without placeholder values, which drafts saved before they were filtered
+    # out may still hold (R2).
+    def draft(conversation)
+      AssessmentSchema.provided(conversation.draft)
+    end
+
     def respond_with_fallback(conversation, text)
       reply = Handlers::OutOfScope::REPLY
-      record(conversation, text, reply, "out-of-scope", conversation.draft)
+      record(conversation, text, reply, "out-of-scope", draft(conversation))
       Result.new(reply: reply, intent: "out-of-scope", actions: FALLBACK_ACTIONS)
     end
 
@@ -137,7 +143,7 @@ module Chat
     end
 
     def save_assessment(draft)
-      return unless AssessmentSchema::COLLECTED_FIELDS.all? { |field| draft[field].present? }
+      return unless AssessmentSchema::COLLECTED_FIELDS.all? { |field| AssessmentSchema.provided(draft)[field].present? }
 
       data = AssessmentSchema::DEFAULTS.merge(draft).slice(*AssessmentSchema.field_names)
       assessment = Assessment.find_or_initialize_by(user_id: user_id)

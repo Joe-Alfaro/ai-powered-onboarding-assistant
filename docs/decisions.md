@@ -1780,3 +1780,26 @@ Append-only. If a decision is reversed, add a new entry that names the one it re
   default builder, but whether build-time variables reach `next build` no longer depends on the
   builder's defaults.
 - **Affects:** R17, Deliverables
+
+## 2026-10-18: Any need is in scope, and placeholder answers count as not provided
+
+- **Decided by:** agent (implementation agent, chat-real-llm fix)
+- **Decision:** the chat system prompt now says every kind of need is a valid reason, that the
+  assistant notes the need rather than doing the task, that urgency, availability and short answers
+  such as "yes" are provide-details, and that out-of-scope covers only requests unrelated to
+  onboarding. Assessment values that stand in for a missing answer (a bracketed token such as
+  `<UNKNOWN>` or `[NAME]`, a sentinel such as "unknown" or "N/A", or only punctuation) are dropped
+  as not provided: by the response validator, from stored drafts before each message, and by the
+  Assessment model's validation. The intent eval set gains the deployed smoke test's non-health
+  phrasings.
+- **Why:** in the deployed smoke test, claude-haiku-4-5 returned schema-valid answers that labeled
+  "help relocating my pottery studio" out-of-scope (it read the message as a request to do the
+  move), then filled the missing reason with `<UNKNOWN>`, which passed the schema's `minLength` and
+  was saved as the assessment's reason.
+- **Alternatives:** reject placeholder answers and retry, which spends the R16 deadline on an
+  answer that is otherwise valid; strip only the placeholder from a longer value, which can leave a
+  reason that no longer makes sense.
+- **Tradeoffs:** a value that embeds an identity placeholder is dropped whole, so the assistant
+  asks for that field again. The sentinel list is fixed, so other ways of saying "unknown" can still
+  get through; they are rarer than the bracketed form.
+- **Affects:** R1, R2, R27

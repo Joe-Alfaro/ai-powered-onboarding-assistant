@@ -25,10 +25,11 @@ module Chat
       errors.empty? ? [ Output.new(intent: data["intent"], fields: fields, reply: data["reply"]), nil ] : [ nil, errors ]
     end
 
-    # Keeps the schema's fields and drops the rest. Null and empty values count as not provided,
-    # since providers with strict schemas often send every property.
+    # Keeps the schema's fields and drops the rest. Null, empty and placeholder values (such as
+    # "<UNKNOWN>") count as not provided, since providers with strict schemas often send every
+    # property and fill the ones they don't know.
     def provided(fields)
-      fields.slice(*AssessmentSchema.field_names).reject { |_, value| value.nil? || value == "" }
+      AssessmentSchema.provided(fields.slice(*AssessmentSchema.field_names))
     end
   end
 end
