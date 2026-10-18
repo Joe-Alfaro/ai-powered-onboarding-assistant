@@ -1,5 +1,5 @@
 # Supabase CLI config for the local stack (`supabase start`): Auth and Storage for development and
-# the grader quick-start. The API's own tables live in the docker compose Postgres, so only the
+# the local quick-start. The API's own tables live in the docker compose Postgres, so only the
 # services the app calls are enabled here. Settings left out use the CLI defaults.
 project_id = "onboarding-assistant"
 
