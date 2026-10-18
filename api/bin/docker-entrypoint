@@ -1,8 +1,10 @@
 #!/bin/bash -e
 
-# If running the rails server then create or migrate existing database
+# If running the rails server then create or migrate the database, then make sure the private
+# Storage bucket exists, so a fresh deploy needs no manual setup.
 if [ "${@: -2:1}" == "./bin/rails" ] && [ "${@: -1:1}" == "server" ]; then
   ./bin/rails db:prepare
+  ./bin/rails storage:ensure_bucket
 fi
 
 exec "${@}"

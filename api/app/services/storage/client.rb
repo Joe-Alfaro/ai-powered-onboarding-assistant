@@ -32,6 +32,21 @@ module Storage
       true
     end
 
+    # Creates the bucket as private unless it exists, and makes an existing public bucket private,
+    # so a fresh deploy needs no manual Storage setup. Returns :created, :exists or :made_private.
+    def ensure_bucket
+      response = perform(Net::HTTP::Get.new(URI("#{@url}/bucket/#{escape(@bucket)}")))
+      return create_bucket if missing?(response)
+
+      return :exists unless JSON.parse(expect_success(response).body.to_s)["public"]
+
+      request = Net::HTTP::Put.new(URI("#{@url}/bucket/#{escape(@bucket)}"))
+      expect_success(perform(json_body(request, { id: @bucket, public: false })))
+      :made_private
+    rescue JSON::ParserError
+      raise Error, "Storage returned an unreadable bucket"
+    end
+
     def upload(key, io, content_type:)
       request = Net::HTTP::Post.new(object_uri(key))
       request["Content-Type"] = content_type
@@ -60,6 +75,20 @@ module Storage
 
     private
 
+    def create_bucket
+      response = perform(json_body(Net::HTTP::Post.new(URI("#{@url}/bucket")), { id: @bucket, name: @bucket, public: false }))
+      return :exists if duplicate?(response)
+
+      expect_success(response)
+      :created
+    end
+
+    def json_body(request, body)
+      request["Content-Type"] = "application/json"
+      request.body = body.to_json
+      request
+    end
+
     def object_uri(key)
       URI("#{@url}/object/#{@bucket}/#{escape(key)}")
     end
@@ -85,11 +114,20 @@ module Storage
       response
     end
 
-    # Storage reports a missing object as a 400 whose body carries statusCode "404".
+    # Storage reports a missing object or bucket as a 400 whose body carries statusCode "404".
     def missing?(response)
-      return true if response.code == "404"
+      status_code?(response, "404")
+    end
 
-      response.code == "400" && JSON.parse(response.body.to_s)["statusCode"].to_s == "404"
+    # A bucket that already exists, for example one a concurrent deploy just created.
+    def duplicate?(response)
+      status_code?(response, "409")
+    end
+
+    def status_code?(response, code)
+      return true if response.code == code
+
+      response.code == "400" && JSON.parse(response.body.to_s)["statusCode"].to_s == code
     rescue JSON::ParserError
       false
     end
