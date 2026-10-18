@@ -158,34 +158,112 @@ host rather than at any one endpoint.
 
 ## Deployed results
 
-> **To fill in at deploy time.** Run all three against the deployed API URL with the production
-> provider (`LLM_MODE=real`), after `bin/rake perf:users` against the production Supabase project.
-> R38 also asks for the first request after 30 minutes idle; record it here too.
+> **Deployed, real LLM.** The first deployed run, the baseline for R18, R23, R24, R31 and R38. Its
+> R22 result **missed the target** (chat client-side p95 11.5 s, overall 8.0 s, against 3.0 s) with
+> Puma on 3 threads; the rerun under "After concurrency tuning" below replaces it and meets it.
 
-Measured: _date and time (UTC)_
+Measured 2026-10-18: the smoke test from 19:57 UTC, the load and timing runs from 20:00:51 to
+20:03:42 UTC, the chat re-check at 20:22 UTC and the cold start at 21:41:46 UTC.
 
-**Setup:** _API URL (no secrets), service plan and region, Puma threads, LLM provider and model,
-whether the fallback provider is set_
+**Setup**
 
-**R22, k6 (20 VUs, 60 s, `LLM_MODE=real`)**
+- API: `https://api-production-460eb.up.railway.app`, web:
+  `https://web-production-3d133.up.railway.app`. Railway, region `sfo` (US West), one replica per
+  service. The plan isn't shown by the Railway CLI.
+- API process: Rails 8.1 production mode, Ruby 3.4.2 with YJIT, **one Puma process with 3
+  threads** (`RAILS_MAX_THREADS=3`), Solid Queue running inside Puma. Database, Auth and Storage on
+  the hosted Supabase project, reached through the session pooler.
+- **LLM: the real LLM.** Claude Haiku 4.5 (`LLM_PROVIDER=anthropic`, `LLM_MODEL=claude-haiku-4-5`),
+  with the Groq fallback provider set.
+- Code: the k6, OCR and booking runs hit the API built from `e03b573`, before the chat routing
+  fix in `80ca414` (deployed 20:21 UTC). The tuned R22 rerun below runs on code that includes it.
+- Client: k6 2.3.0 and the rake tasks on an Apple M2 laptop (16 GB) on a home connection in the
+  US; requests entered Railway at its Atlanta edge (`x-railway-edge: atl1`), so every client-side
+  time includes a cross-country round trip.
+- Load-test users: `load-test-01@example.com` to `load-test-20@example.com`, created in the
+  production Supabase project with `railway run --service api bin/rails perf:users` (tokens in an
+  untracked file outside the repository). The tooling has no task to delete them, so they remain.
+
+**R22, first run: k6 (20 VUs, 60 s, `LLM_MODE=real`), client-side**
 
 | Endpoint | p95 | Median |
 | --- | --- | --- |
-| All requests | _ | |
-| `GET /health` | _ | _ |
-| `GET /slots` | _ | _ |
-| `GET /onboarding` | _ | _ |
-| `POST /chat/messages` | _ | _ |
-| `POST /bookings` | _ | _ |
-| `DELETE /bookings/:id` | _ | _ |
+| All requests | 8,025 ms | |
+| `GET /health` | 8,309 ms | 2,307 ms |
+| `GET /slots` | 2,277 ms | 831 ms |
+| `GET /onboarding` | 2,311 ms | 830 ms |
+| `POST /chat/messages` | 11,510 ms | 4,209 ms |
+| `POST /bookings` | 8,808 ms | 2,562 ms |
+| `DELETE /bookings/:id` | 4,410 ms | 910 ms |
 
-Requests: _, error rate: _, HTTP 429 responses: _, LLM rate-limited chat replies: _
+Requests: 505, error rate: 0.00%, HTTP 429 responses: 0, LLM rate-limited chat replies: 0. Five
+`POST /bookings` answered the expected 409 (another user took the slot first).
 
-**R23, OCR (20 uploads):** server-side p95 _, client-side p95 _ (from _where the client ran_)
+**Server-side for the same run.** The Lograge `duration` of each request in the run's window
+(`railway logs --service api --json`; `GET /health` isn't logged), nearest-rank.
 
-**R24, booking (20 bookings):** server-side p95 _
+| Endpoint | Requests | p95 | Median |
+| --- | --- | --- | --- |
+| All logged requests | 420 | 1,982 ms | |
+| `GET /slots` | 85 | 32 ms | 29 ms |
+| `GET /onboarding` | 85 | 83 ms | 80 ms |
+| `POST /chat/messages` | 85 | 3,538 ms | 1,832 ms |
+| `POST /bookings` | 85 | 168 ms | 158 ms |
+| `DELETE /bookings/:id` | 80 | 140 ms | 133 ms |
 
-**R38, first request after 30 minutes idle:** _
+**Why the first run missed R22.** The server spends little time on anything but chat; the client-side times are
+mostly queueing. Each chat request holds one of the 3 Puma threads for about 2 s (median) while it
+waits on the LLM, so with 20 virtual users the requests behind it, `/health` included, wait for a
+free thread. Even with no queue, the chat path's server p95 (3.5 s) is above 3 s on its own. The
+rerun below, with 24 Puma threads, removes the queueing.
+
+**R23, OCR (20 uploads of the golden set):** server-side p95 **1,838 ms** (p50 1,584 ms, max
+1,854 ms); client-side p95 2,026 ms (p50 1,741 ms, max 2,036 ms), from the laptop above. 20 of 20
+answered 200 with the extracted fields. Method: `bin/rails perf:ocr` with `PERF_BASE_URL` set to
+the API, timing `POST /documents` (it stores the image, runs OCR and answers with the fields) on
+the client; the server-side number is the Lograge `duration` of the 20 `POST /documents` requests
+in the run's window, read from `railway logs --service api --json`. Target 8.0 s: met.
+
+**R24, booking (20 bookings):** server-side p95 **156 ms** (p50 153 ms, max 157 ms), the Lograge
+`duration` of the 20 `POST /bookings` requests in the run's window, read the same way; client-side
+p95 260 ms. 20 of 20 answered 201. Method: `bin/rails perf:booking` with `PERF_BASE_URL`. Target
+1.0 s: met.
+
+**R38**
+
+- The k6 run above targets the deployed URL.
+- LLM 429s under load: none reached the client (0 HTTP 429 responses, 0 `llm_rate_limited`
+  replies). A provider 429 answered by the fallback provider isn't visible to the client.
+- First request after 30 minutes idle: the API's last logged request before it was at 20:45:28
+  UTC (the tuned R22 run below), so it had been idle about 56 minutes (`GET /health` isn't logged,
+  so an external uptime ping in that window can't be ruled out). Railway doesn't sleep services.
+  Measured with `curl` from the laptop above at 21:41:46 UTC, on the tuned deployment (24
+  threads): `GET /health` on the API answered 200 with a time to first byte of **1.50 s**
+  (connect 0.09 s, TLS done at 0.13 s), and `GET /` on the web 200 in **0.26 s**. The next
+  requests took 0.25 s and 0.18 s. Target 3 s: met.
+
+**R18, HTTPS.** Checked with `curl` on 2026-10-18. Plain HTTP on both services answers `301 Moved
+Permanently` to the same path over HTTPS (Railway's edge). The API sends
+`Strict-Transport-Security: max-age=63072000; includeSubDomains`; the web service sends no HSTS
+header, so a browser's first visit by plain HTTP still goes through the redirect.
+
+**R31, log format.** The API writes each Lograge request line as single-line JSON; `railway logs
+--json` returns it as a flat object with typed fields (`"duration": 158.2`), while the CLI's
+default view only renders those fields as `key=value`. Every number above labelled server-side
+comes from those fields.
+
+**Browser smoke test of the deployed app.** Headless Chromium (Playwright, time zone
+`America/Chicago`) against the web URL with a demo user and the real LLM: sign in; chat until the
+assessment completes; consent, unticked by default; upload `api/eval/golden/001_clean.png`; the
+OCR pre-filled the name, then confirm; book a slot shown in local time with a zone label (`Mon,
+Oct 19, 2026, 9:00 AM CDT`); the done page.
+
+- 19:57 UTC, on `e03b573`: every step passed, but the chat answered the first six on-topic
+  messages with the out-of-scope template and saved the assessment's reason as `<UNKNOWN>`.
+- 20:22 UTC, re-check on `80ca414` (the chat routing fix), same messages: **every step passed**.
+  The chat asked real follow-ups and completed in 3 turns with no out-of-scope reply; the reason
+  (`Help relocating pottery studio to a new building`) showed on the chat summary and the done
+  page. The booking was then cancelled.
 
 ### After concurrency tuning
 
