@@ -317,7 +317,7 @@ Python sidecar service behind the same `Ocr::Extractor` interface.
 | Malformed LLM output, hostile input | Schema validation with one retry; message length cap; prompt-injection cases in the eval |
 | Compliance claims | `docs/compliance.md` covers HIPAA and PCI DSS conditionally with free-tier gaps |
 | Timezones | UTC storage, local display with zone label, a test with a non-UTC browser zone |
-| Company names | None used; checked at submission |
+| Company names | None used; checked before release |
 
 ## Test strategy
 
@@ -402,7 +402,7 @@ from outside Railway and keep a record of each check, so the uptime percentage f
 window can be computed from the checks that actually ran. GitLab scheduled pipelines are not
 allowed.
 
-**Local and grader setup:** `supabase start` runs Auth, Postgres and Storage locally, then
+**Local and reviewer setup:** `supabase start` runs Auth, Postgres and Storage locally, then
 `docker compose up` runs the API and web against it. `bin/setup` migrates, seeds slots, demo users
 and the golden set, and prints the demo credentials. With only a Groq key (or a local Ollama), the
 app and the eval run with no paid key.
@@ -415,7 +415,7 @@ app and the eval run with no paid key.
 | OCR plus preprocessing exceeds 8 s on Railway CPU | Downscale to a fixed working size before OCR; measure on Railway in the first deploy |
 | LLM latency pushes chat p95 over 3 s | One LLM call per message, short prompts, a fast model; the eval reports p95 per provider |
 | Free LLM tiers rate-limit under k6 | Expected; reported honestly, and part of the provider decision |
-| Supabase local stack slows the grader quick-start | Document expected download time; images are cached after the first run |
+| Supabase local stack slows the local quick-start | Document expected download time; images are cached after the first run |
 | Two runtimes in a 3-day timebox | Scaffold both with quality gates on day one; keep the frontend thin |
 
 ## Open questions

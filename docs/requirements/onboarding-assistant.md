@@ -386,10 +386,10 @@ Not required for done. Pursue only after every R above passes, and only with the
 
 ## Deliverables
 
-Checked at submission, not part of the build audit.
+Checked before release, not part of the build audit.
 
 - [ ] Public GitLab repository
-- [ ] README: what the app does, stack and LLM choices with reasons, the grader quick-start (setup,
+- [ ] README: what the app does, stack and LLM choices with reasons, the local quick-start (setup,
       environment variables, seed command, demo credentials, test and eval commands), and the
       performance and eval results with how each was measured
 - [ ] `AI_USAGE.md`: AI tools used and for what, LLM and OCR engines and versions, and prompts or

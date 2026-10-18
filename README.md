@@ -25,6 +25,31 @@ and bookings alone.
 [docs/deploy.md](docs/deploy.md) covers the deployment and
 [docs/performance.md](docs/performance.md) the deployed performance and uptime results.
 
+## Stack and LLM choices
+
+| Layer | Choice | Why |
+| --- | --- | --- |
+| Backend | Ruby 3.4, Rails 8 API-only | Fast, conventional CRUD, migrations and RSpec; Solid Queue removes the need for Redis |
+| Frontend | Next.js, React, TypeScript | Typed, accessible UI with first-class Supabase client support |
+| Auth | Supabase Auth | Per-user auth with JWTs the API can verify locally |
+| Database | Supabase Postgres | Managed Postgres with encryption at rest, alongside Auth and Storage |
+| File storage | Supabase Storage, private bucket | Signed URLs and server-side deletion |
+| OCR | Tesseract 5 with libvips preprocessing | Free and self-hosted, so ID images never leave our infrastructure |
+| Jobs | Solid Queue inside Puma | One service to deploy; runs the recurring purge job |
+| Hosting | Railway | Doesn't sleep, so cold starts and uptime hold |
+| Load testing | k6 | Scripted load tests, committed in `perf/` |
+| LLM | Claude Haiku 4.5, Groq fallback | Picked by the multi-provider eval, below |
+
+**LLM.** The provider is swappable and was picked by running the same eval on every candidate
+([provider comparison](#provider-comparison)). Production runs Claude Haiku 4.5
+(`LLM_PROVIDER=anthropic`) with Groq as the fallback (`LLM_FALLBACK_PROVIDER=groq`). Haiku passes
+every intent, saves a schema-valid assessment in 100% of the scripted conversations, has a p95
+of about 2.4 s and costs about $0.006 per conversation, less than half of Sonnet's cost for the
+same rates. The free Groq model is faster and cheaper but only 66.7% schema-valid, and saving a
+valid assessment is the chatbot's main job (R2), so it is the fallback. The app still runs on Groq
+alone with `LLM_PROVIDER=groq`, so no paid key is required (R21). `ARCHITECTURE.md` and
+`docs/decisions.md` have the full reasoning.
+
 ## Documentation
 
 | Document | Covers |
@@ -191,6 +216,29 @@ cd api && bin/rake ai:eval           # OCR plus the chat sets on LLM_PROVIDER (n
 [docs/performance.md](docs/performance.md) has the k6 load test (`perf/load.js`, R22, R38), the
 OCR and booking timing tasks (`bin/rake perf:ocr` and `perf:booking`, R23, R24), how each is
 measured, a local baseline and the deployed results. `brew install k6` for the load test.
+
+## Results
+
+Deployed on Railway with the real LLM (Claude Haiku 4.5), measured 2026-10-18. Every p95 is
+nearest-rank except k6's own.
+
+| Requirement | Result | Target | How it was measured |
+| --- | --- | --- | --- |
+| R22 load | p95 1,949 ms overall, 2,432 ms for chat; 0% errors, 0 HTTP 429 | p95 < 3.0 s | k6 (`perf/load.js`), 20 virtual users for 60 s against the deployed API with `LLM_MODE=real`, after the concurrency tuning (24 Puma threads); client-side times |
+| R23 OCR | server p95 1,838 ms (20 of 20 succeeded) | p95 < 8.0 s | `perf:ocr`: 20 golden-set uploads to `POST /documents`, server time from each request's Lograge `duration` |
+| R24 booking | server p95 156 ms (20 of 20 succeeded) | p95 < 1.0 s | `perf:booking`: 20 bookings, server time from each `POST /bookings` Lograge `duration` |
+| R38 cold start | 1.50 s to first byte | < 3 s | `curl` of `GET /health` after about 56 minutes idle |
+| R25 uptime | Pending: the monitor is still to be set up | ≥ 99% | External monitor on `GET /health` every 5 minutes |
+
+**Eval scorecard** (`bin/rake ai:eval`, 2026-10-16):
+
+- OCR per-field accuracy on the 30-document golden set: full name 96.7%, date of birth 100%,
+  address 100%; on the 6 hard cases, full name 83.3% and the other two 100%.
+- Claude Haiku 4.5: intent coverage 100% (5/5), schema-valid rate 100% (3/3), out-of-scope
+  fallback 100%, no false booking: pass, p95 2,409 ms, $0.0063 per conversation.
+
+Details: [docs/performance.md](docs/performance.md) for the method, setup and per-endpoint numbers,
+and [api/eval](api/eval/README.md) with `api/eval/results/` for the eval.
 
 ## Environment variables
 
