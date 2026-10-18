@@ -92,17 +92,15 @@ test:
 # Read https://guides.rubyonrails.org/configuring.html#configuring-a-database
 # for a full overview on how database connection configuration can be specified.
 #
+# One hosted Postgres database (Supabase) holds the app tables, Solid Queue and Solid Cache, so
+# production has a single config. Use the Supabase session pooler connection string (port 5432
+# on the pooler host, reachable over IPv4); see docs/deploy.md.
 production:
-  primary: &primary_production
-    <<: *default
-    database: api_production
-    username: api
-    password: <%= ENV["API_DATABASE_PASSWORD"] %>
-  cache:
-    <<: *primary_production
-    database: api_production_cache
-    migrations_paths: db/cache_migrate
-  queue:
-    <<: *primary_production
-    database: api_production_queue
-    migrations_paths: db/queue_migrate
+  <<: *default
+  url: <%= ENV["DATABASE_URL"] %>
+  # Off so the app is also safe behind a transaction pooler (port 6543), which can't keep
+  # prepared statements across transactions.
+  prepared_statements: false
+  # db:prepare runs in the container entrypoint; the seed calls Supabase Auth, so it runs only
+  # on request (bin/rails db:seed).
+  seeds: false
